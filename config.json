@@ -1,0 +1,15 @@
+{
+    "root": "/home/jan/bla",
+    [
+        {
+            "class": "N",
+            "frequency": 60,
+            "metrics": ["flops_any", "mem_bw"]
+        },
+        {
+            "class": "C",
+            "frequency": 30,
+            "metrics": ["cpi", "flops_any"]
+        }
+    ]
+}
