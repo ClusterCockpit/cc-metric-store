@@ -1,9 +1,6 @@
 package main
 
-import (
-	"log"
-	"os"
-)
+/*
 
 //MetricFile holds the state for a metric store file.
 //It does not export any variable.
@@ -63,3 +60,4 @@ func getFileHandle(file string, start int64) (f *File, err error) {
 
 	return f
 }
+*/

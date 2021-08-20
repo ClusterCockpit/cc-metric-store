@@ -46,19 +46,19 @@ func TestParse(t *testing.T) {
 		t.Error(err)
 	}
 
-	if line.measurement != expectedMeasurement {
+	if line.Measurement != expectedMeasurement {
 		t.Error("measurement not as expected")
 	}
 
-	if line.t.Unix() != int64(expectedTimestamp) {
+	if line.Ts.Unix() != int64(expectedTimestamp) {
 		t.Error("timestamp not as expected")
 	}
 
-	if !reflect.DeepEqual(line.tags, expectedTags) {
+	if !reflect.DeepEqual(line.Tags, expectedTags) {
 		t.Error("tags not as expected")
 	}
 
-	if !reflect.DeepEqual(line.fields, expectedFields) {
+	if !reflect.DeepEqual(line.Fields, expectedFields) {
 		t.Error("fields not as expected")
 	}
 }

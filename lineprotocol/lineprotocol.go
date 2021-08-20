@@ -17,10 +17,10 @@ type Metric struct {
 // fields:      metrics...
 // t:           timestamp (accuracy: seconds)
 type Line struct {
-	measurement string
-	tags        map[string]string
-	fields      []Metric
-	t           time.Time
+	Measurement string
+	Tags        map[string]string
+	Fields      []Metric
+	Ts          time.Time
 }
 
 // Parse a single line as string.
@@ -35,18 +35,18 @@ func Parse(rawline string) (*Line, error) {
 	}
 
 	tagsAndMeasurement := strings.Split(parts[0], ",")
-	line.measurement = tagsAndMeasurement[0]
-	line.tags = map[string]string{}
+	line.Measurement = tagsAndMeasurement[0]
+	line.Tags = map[string]string{}
 	for i := 1; i < len(tagsAndMeasurement); i++ {
 		pair := strings.Split(tagsAndMeasurement[i], "=")
 		if len(pair) != 2 {
 			return nil, errors.New("line format error")
 		}
-		line.tags[pair[0]] = pair[1]
+		line.Tags[pair[0]] = pair[1]
 	}
 
 	rawfields := strings.Split(parts[1], ",")
-	line.fields = []Metric{}
+	line.Fields = []Metric{}
 	for i := 0; i < len(rawfields); i++ {
 		pair := strings.Split(rawfields[i], "=")
 		if len(pair) != 2 {
@@ -57,7 +57,7 @@ func Parse(rawline string) (*Line, error) {
 			return nil, err
 		}
 
-		line.fields = append(line.fields, Metric{
+		line.Fields = append(line.Fields, Metric{
 			Name:  pair[0],
 			Value: field,
 		})
@@ -68,6 +68,6 @@ func Parse(rawline string) (*Line, error) {
 		return nil, err
 	}
 
-	line.t = time.Unix(unixTimestamp, 0)
+	line.Ts = time.Unix(unixTimestamp, 0)
 	return line, nil
 }
