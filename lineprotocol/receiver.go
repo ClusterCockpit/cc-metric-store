@@ -89,10 +89,10 @@ func ReceiveNats(address string, handleLine func(line *Line), done chan bool) er
 		return err
 	}
 
+	log.Printf("NATS subscription to 'updates' on '%s' established\n", address)
 	for {
-		stop := <-done
-		if stop {
-			return nil
-		}
+		_ = <-done
+		log.Println("NATS connection closed")
+		return nil
 	}
 }

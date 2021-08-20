@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/ClusterCockpit/cc-metric-store/lineprotocol"
@@ -61,7 +62,7 @@ func buildKey(line *lineprotocol.Line) (string, error) {
 }
 
 func handleLine(line *lineprotocol.Line) {
-	// log.Printf("line: %v\n", line)
+	log.Printf("line: %v (t=%d)\n", line, line.Ts.Unix())
 
 	store := metricStores[line.Measurement]
 	key, err := buildKey(line)
@@ -85,10 +86,22 @@ func main() {
 	go func() {
 		_ = <-sigs
 		done <- true
+		close(done)
+		log.Println("shuting down")
+	}()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+
+	go func() {
+		StartApiServer(":8080", done)
+		wg.Done()
 	}()
 
 	err := lineprotocol.ReceiveNats("nats://localhost:4222", handleLine, done)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	wg.Wait()
 }
