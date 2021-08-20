@@ -1,46 +1,31 @@
 package main
 
 import (
-	"bytes"
-	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
-	"sync"
+	"os/signal"
+	"syscall"
 
-	nats "github.com/nats-io/nats.go"
+	"github.com/ClusterCockpit/cc-metric-store/lineprotocol"
 )
 
+type MetricStore interface {
+	AddMetrics(key string, ts int64, metrics []lineprotocol.Metric) error
+	GetMetric(key string, metric string, from int64, to int64) ([]float64, int64, error)
+}
+
 type Config struct {
-	MemoryStore struct {
-		Duration string `json:"duration"`
-	} `json:"memory_store"`
-	FileStore struct {
-		Duration string `json:"duration"`
-	} `json:"file_store"`
-	Root      string   `json:"root"`
-	Frequency int      `json:"frequency"`
-	Metrics   []string `json:"metrics"`
+	MetricClasses map[string]struct {
+		Frequency int      `json:"frequency"`
+		Metrics   []string `json:"metrics"`
+	} `json:"metrics"`
 }
 
-type MetricData struct {
-	Name   string
-	Values []float64
-}
-
-type Metric struct {
-	Name  string
-	Value float64
-}
-
-type message struct {
-	Ts     int64
-	Tags   []string
-	Fields []Metric
-}
-
-var Conf Config
+var conf Config
+var metricStores map[string]MetricStore = map[string]MetricStore{}
 
 func loadConfiguration(file string) Config {
 	var config Config
@@ -54,36 +39,56 @@ func loadConfiguration(file string) Config {
 	return config
 }
 
+// TODO: Change MetricStore API so that we do not have to do string concat?
+// Nested hashmaps could be an alternative.
+func buildKey(line *lineprotocol.Line) (string, error) {
+	cluster, ok := line.Tags["cluster"]
+	if !ok {
+		return "", errors.New("missing cluster tag")
+	}
+
+	host, ok := line.Tags["host"]
+	if !ok {
+		return "", errors.New("missing host tag")
+	}
+
+	cpu, ok := line.Tags["cpu"]
+	if ok {
+		return cluster + ":" + host + ":" + cpu, nil
+	}
+
+	return cluster + ":" + host, nil
+}
+
+func handleLine(line *lineprotocol.Line) {
+	// log.Printf("line: %v\n", line)
+
+	store := metricStores[line.Measurement]
+	key, err := buildKey(line)
+	if err != nil {
+		log.Println(err)
+	}
+
+	err = store.AddMetrics(key, line.Ts.Unix(), line.Fields)
+}
+
 func main() {
+	conf = loadConfiguration("config.json")
 
-	Conf = loadConfiguration("config.json")
+	for class, info := range conf.MetricClasses {
+		metricStores[class] = newMemoryStore(info.Metrics, 1000, info.Frequency)
+	}
 
-	// Connect to a server
-	nc, err := nats.Connect(nats.DefaultURL)
+	sigs := make(chan os.Signal, 1)
+	done := make(chan bool, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		_ = <-sigs
+		done <- true
+	}()
+
+	err := lineprotocol.ReceiveNats("nats://localhost:4222", handleLine, done)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer nc.Close()
-
-	var msgBuffer bytes.Buffer
-	dec := gob.NewDecoder(&msgBuffer)
-
-	// Use a WaitGroup to wait for a message to arrive
-	wg := sync.WaitGroup{}
-	wg.Add(1)
-
-	// Subscribe
-	if _, err := nc.Subscribe("updates", func(m *nats.Msg) {
-		log.Println(m.Subject)
-		var p message
-		err = dec.Decode(&p)
-		if err != nil {
-			log.Fatal("decode error 1:", err)
-		}
-	}); err != nil {
-		log.Fatal(err)
-	}
-
-	// Wait for a message to come in
-	wg.Wait()
 }

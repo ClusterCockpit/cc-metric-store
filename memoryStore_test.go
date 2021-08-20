@@ -5,9 +5,11 @@ import (
 	"log"
 	"math"
 	"testing"
+
+	"github.com/ClusterCockpit/cc-metric-store/lineprotocol"
 )
 
-var testMetrics [][]Metric = [][]Metric{
+var testMetrics [][]lineprotocol.Metric = [][]lineprotocol.Metric{
 	{{"flops", 100.5}, {"mem_bw", 2088.67}},
 	{{"flops", 180.5}, {"mem_bw", 4078.32}, {"mem_capacity", 1020}},
 	{{"flops", 980.5}, {"mem_bw", 9078.32}, {"mem_capacity", 5010}},
@@ -19,7 +21,7 @@ var testMetrics [][]Metric = [][]Metric{
 	{{"flops", 970.5}, {"mem_bw", 9178.32}, {"mem_capacity", 2010}},
 	{{"flops", 970.5}, {"mem_bw", 9178.32}, {"mem_capacity", 2010}}}
 
-var testMetricsAlt [][]Metric = [][]Metric{
+var testMetricsAlt [][]lineprotocol.Metric = [][]lineprotocol.Metric{
 	{{"flops", 120.5}, {"mem_bw", 2080.67}},
 	{{"flops", 130.5}, {"mem_bw", 4071.32}, {"mem_capacity", 1120}},
 	{{"flops", 940.5}, {"mem_bw", 9072.32}, {"mem_capacity", 5210}},

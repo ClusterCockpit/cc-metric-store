@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"math"
+
+	"github.com/ClusterCockpit/cc-metric-store/lineprotocol"
 )
 
 type storeBuffer struct {
@@ -71,7 +73,7 @@ func newMemoryStore(o []string, n int, f int) *MemoryStore {
 func (m *MemoryStore) AddMetrics(
 	key string,
 	ts int64,
-	metrics []Metric) error {
+	metrics []lineprotocol.Metric) error {
 
 	b, ok := m.containers[key]
 
