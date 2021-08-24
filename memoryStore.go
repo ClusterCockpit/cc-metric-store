@@ -3,18 +3,22 @@ package main
 import (
 	"fmt"
 	"math"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/ClusterCockpit/cc-metric-store/lineprotocol"
 )
 
 type storeBuffer struct {
-	store []float64
+	store []lineprotocol.Float
 	start int64
 }
 
 type buffer struct {
 	current *storeBuffer
 	next    *storeBuffer
+	lock    sync.Mutex
 }
 
 //MemoryStore holds the state for a metric memory store.
@@ -25,21 +29,22 @@ type MemoryStore struct {
 	frequency  int
 	numSlots   int
 	numMetrics int
+	lock       sync.Mutex
 }
 
 func initBuffer(b *storeBuffer) {
 	for i := 0; i < len(b.store); i++ {
-		b.store[i] = math.NaN()
+		b.store[i] = lineprotocol.Float(math.NaN())
 	}
 }
 
 func allocateBuffer(ts int64, size int) *buffer {
 	b := new(buffer)
-	s := make([]float64, size)
+	s := make([]lineprotocol.Float, size)
 	b.current = &storeBuffer{s, ts}
 	initBuffer(b.current)
 
-	s = make([]float64, size)
+	s = make([]lineprotocol.Float, size)
 	b.next = &storeBuffer{s, 0}
 	initBuffer(b.next)
 	return b
@@ -75,13 +80,16 @@ func (m *MemoryStore) AddMetrics(
 	ts int64,
 	metrics []lineprotocol.Metric) error {
 
+	m.lock.Lock()
 	b, ok := m.containers[key]
-
 	if !ok {
 		//Key does not exist. Allocate new buffer.
 		m.containers[key] = allocateBuffer(ts, m.numMetrics*m.numSlots)
 		b = m.containers[key]
 	}
+	m.lock.Unlock()
+	b.lock.Lock()
+	defer b.lock.Unlock()
 
 	index := int(ts-b.current.start) / m.frequency
 
@@ -111,13 +119,17 @@ func (m *MemoryStore) GetMetric(
 	key string,
 	metric string,
 	from int64,
-	to int64) ([]float64, int64, error) {
+	to int64) ([]lineprotocol.Float, int64, error) {
 
+	m.lock.Lock()
 	b, ok := m.containers[key]
-
+	m.lock.Unlock()
 	if !ok {
 		return nil, 0, fmt.Errorf("key %s does not exist", key)
 	}
+
+	b.lock.Lock()
+	defer b.lock.Unlock()
 
 	if to <= from {
 		return nil, 0, fmt.Errorf("invalid duration %d - %d", from, to)
@@ -131,11 +143,11 @@ func (m *MemoryStore) GetMetric(
 		return nil, 0, fmt.Errorf("to %d out of bounds", to)
 	}
 
-	var values1, values2 []float64
-	offset := m.offsets[metric]
+	var values1, values2 []lineprotocol.Float
+	offset := m.offsets[metric] * m.numSlots
 	valuesFrom := from
 
-	if from < b.current.start {
+	if from < b.current.start && b.next.start != 0 {
 
 		var start, stop = 0, m.numSlots
 
@@ -170,4 +182,69 @@ func (m *MemoryStore) GetMetric(
 	}
 
 	return append(values1, values2...), valuesFrom, nil
+}
+
+// Call *f* once on every value which *GetMetric* would
+// return for similar arguments. This operation might be known
+// as fold in Ruby/Haskell/Scala. It can be used to implement
+// the calculation of sums, averages, minimas and maximas.
+// The advantage of using this over *GetMetric* for such calculations
+// is that it can be implemented without copying data.
+// TODO: Write Tests, implement without calling GetMetric!
+func (m *MemoryStore) Reduce(
+	key string, metric string,
+	from int64, to int64,
+	f func(t int64, acc lineprotocol.Float, x lineprotocol.Float) lineprotocol.Float, initialX lineprotocol.Float) (lineprotocol.Float, error) {
+
+	values, valuesFrom, err := m.GetMetric(key, metric, from, to)
+	if err != nil {
+		return 0.0, err
+	}
+
+	acc := initialX
+	t := valuesFrom
+	for i := 0; i < len(values); i++ {
+		acc = f(t, acc, values[i])
+		t += int64(m.frequency)
+	}
+
+	return acc, nil
+}
+
+// Return a map of keys to a map of metrics to the most recent value writen to
+// the store for that metric.
+// TODO: Write Tests!
+func (m *MemoryStore) Peak(prefix string) map[string]map[string]lineprotocol.Float {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	now := time.Now().Unix()
+
+	retval := make(map[string]map[string]lineprotocol.Float)
+	for key, b := range m.containers {
+		if !strings.HasPrefix(key, prefix) {
+			continue
+		}
+
+		b.lock.Lock()
+		index := int(now-b.current.start) / m.frequency
+		if index >= m.numSlots {
+			index = m.numSlots - 1
+		}
+
+		vals := make(map[string]lineprotocol.Float)
+		for metric, offset := range m.offsets {
+			val := lineprotocol.Float(math.NaN())
+			for i := index; i >= 0 && math.IsNaN(float64(val)); i -= 1 {
+				val = b.current.store[offset*m.numSlots+i]
+			}
+
+			vals[metric] = val
+		}
+
+		b.lock.Unlock()
+		retval[key[len(prefix):]] = vals
+	}
+
+	return retval
 }

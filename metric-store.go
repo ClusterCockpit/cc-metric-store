@@ -15,7 +15,9 @@ import (
 
 type MetricStore interface {
 	AddMetrics(key string, ts int64, metrics []lineprotocol.Metric) error
-	GetMetric(key string, metric string, from int64, to int64) ([]float64, int64, error)
+	GetMetric(key string, metric string, from int64, to int64) ([]lineprotocol.Float, int64, error)
+	Reduce(key, metric string, from, to int64, f func(t int64, sum, x lineprotocol.Float) lineprotocol.Float, initialX lineprotocol.Float) (lineprotocol.Float, error)
+	Peak(prefix string) map[string]map[string]lineprotocol.Float
 }
 
 type Config struct {
@@ -26,6 +28,7 @@ type Config struct {
 }
 
 var conf Config
+
 var metricStores map[string]MetricStore = map[string]MetricStore{}
 
 func loadConfiguration(file string) Config {
@@ -53,24 +56,38 @@ func buildKey(line *lineprotocol.Line) (string, error) {
 		return "", errors.New("missing host tag")
 	}
 
+	socket, ok := line.Tags["socket"]
+	if ok {
+		return cluster + ":" + host + ":s" + socket, nil
+	}
+
 	cpu, ok := line.Tags["cpu"]
 	if ok {
-		return cluster + ":" + host + ":" + cpu, nil
+		return cluster + ":" + host + ":c" + cpu, nil
 	}
 
 	return cluster + ":" + host, nil
 }
 
 func handleLine(line *lineprotocol.Line) {
-	log.Printf("line: %v (t=%d)\n", line, line.Ts.Unix())
+	store, ok := metricStores[line.Measurement]
+	if !ok {
+		log.Printf("unkown class: '%s'\n", line.Measurement)
+		return
+	}
 
-	store := metricStores[line.Measurement]
 	key, err := buildKey(line)
 	if err != nil {
 		log.Println(err)
+		return
 	}
 
+	// log.Printf("t=%d, key='%s', values=%v\n", line.Ts.Unix(), key, line.Fields)
+	log.Printf("new data: t=%d, key='%s'", line.Ts.Unix(), key)
 	err = store.AddMetrics(key, line.Ts.Unix(), line.Fields)
+	if err != nil {
+		log.Println(err)
+	}
 }
 
 func main() {

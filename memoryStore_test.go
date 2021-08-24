@@ -261,7 +261,7 @@ func TestGetMetricGap(t *testing.T) {
 	if val[0] != 100.5 {
 		t.Errorf("Want 100.5 Got %f\n", val[0])
 	}
-	if !math.IsNaN(val[1]) {
+	if !math.IsNaN(float64(val[1])) {
 		t.Errorf("Want NaN Got %f\n", val[1])
 	}
 	if val[0] != 100.5 {
