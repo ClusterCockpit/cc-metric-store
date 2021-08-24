@@ -2,14 +2,29 @@ package lineprotocol
 
 import (
 	"errors"
+	"math"
 	"strconv"
 	"strings"
 	"time"
 )
 
+// Go's JSON encoder for floats does not support NaN (https://github.com/golang/go/issues/3480).
+// This program uses NaN as a signal for missing data.
+// For the HTTP JSON API to be able to handle NaN values,
+// we have to use our own type which implements encoding/json.Marshaler itself.
+type Float float64
+
+func (f Float) MarshalJSON() ([]byte, error) {
+	if math.IsNaN(float64(f)) {
+		return []byte("null"), nil
+	}
+
+	return []byte(strconv.FormatFloat(float64(f), 'f', -1, 64)), nil
+}
+
 type Metric struct {
 	Name  string
-	Value float64
+	Value Float
 }
 
 // measurement: node or cpu
@@ -59,7 +74,7 @@ func Parse(rawline string) (*Line, error) {
 
 		line.Fields = append(line.Fields, Metric{
 			Name:  pair[0],
-			Value: field,
+			Value: Float(field),
 		})
 	}
 

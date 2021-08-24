@@ -8,13 +8,14 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ClusterCockpit/cc-metric-store/lineprotocol"
 	"github.com/gorilla/mux"
 )
 
 type HostData struct {
-	Host  string    `json:"host"`
-	Start int64     `json:"start"`
-	Data  []float64 `json:"data"`
+	Host  string               `json:"host"`
+	Start int64                `json:"start"`
+	Data  []lineprotocol.Float `json:"data"`
 }
 
 type MetricData struct {
