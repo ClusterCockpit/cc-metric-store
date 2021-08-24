@@ -2,7 +2,15 @@
     "metrics": {
         "node": {
             "frequency": 3,
-            "metrics": ["load_one", "load_five", "load_fifteen", "proc_total", "proc_run"]
+            "metrics": ["load_five", "load_fifteen", "proc_total", "proc_run", "load_one"]
+        },
+        "socket": {
+            "frequency": 3,
+            "metrics": ["power", "mem_bw"]
+        },
+        "cpu": {
+            "frequency": 3,
+            "metrics": ["flops_sp", "flops_dp", "flops_any", "clock", "cpi"]
         }
     }
 }
