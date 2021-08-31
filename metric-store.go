@@ -2,34 +2,33 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
-
-	"github.com/ClusterCockpit/cc-metric-store/lineprotocol"
+	"time"
 )
 
-type MetricStore interface {
-	AddMetrics(key string, ts int64, metrics []lineprotocol.Metric) error
-	GetMetric(key string, metric string, from int64, to int64) ([]lineprotocol.Float, int64, error)
-	Reduce(key, metric string, from, to int64, f func(t int64, sum, x lineprotocol.Float) lineprotocol.Float, initialX lineprotocol.Float) (lineprotocol.Float, error)
-	Peak(prefix string) map[string]map[string]lineprotocol.Float
+type MetricConfig struct {
+	Frequency   int64  `json:"frequency"`
+	Aggregation string `json:"aggregation"`
+	Scope       string `json:"scope"`
 }
 
 type Config struct {
-	MetricClasses map[string]struct {
-		Frequency int      `json:"frequency"`
-		Metrics   []string `json:"metrics"`
-	} `json:"metrics"`
+	Metrics                 map[string]MetricConfig `json:"metrics"`
+	RestoreLastHours        int                     `json:"restore-last-hours"`
+	CheckpointIntervalHours int                     `json:"checkpoint-interval-hours"`
+	ArchiveRoot             string                  `json:"archive-root"`
+	Nats                    string                  `json:"nats"`
 }
 
-var conf Config
+const KEY_SEPERATOR string = "."
 
-var metricStores map[string]MetricStore = map[string]MetricStore{}
+var conf Config
+var memoryStore *MemoryStore = nil
 
 func loadConfiguration(file string) Config {
 	var config Config
@@ -43,82 +42,112 @@ func loadConfiguration(file string) Config {
 	return config
 }
 
-// TODO: Change MetricStore API so that we do not have to do string concat?
-// Nested hashmaps could be an alternative.
-func buildKey(line *lineprotocol.Line) (string, error) {
+func handleLine(line *Line) {
 	cluster, ok := line.Tags["cluster"]
 	if !ok {
-		return "", errors.New("missing cluster tag")
+		log.Println("'cluster' tag missing")
+		return
 	}
 
 	host, ok := line.Tags["host"]
 	if !ok {
-		return "", errors.New("missing host tag")
-	}
-
-	socket, ok := line.Tags["socket"]
-	if ok {
-		return cluster + ":" + host + ":s" + socket, nil
-	}
-
-	cpu, ok := line.Tags["cpu"]
-	if ok {
-		return cluster + ":" + host + ":c" + cpu, nil
-	}
-
-	return cluster + ":" + host, nil
-}
-
-func handleLine(line *lineprotocol.Line) {
-	store, ok := metricStores[line.Measurement]
-	if !ok {
-		log.Printf("unkown class: '%s'\n", line.Measurement)
+		log.Println("'host' tag missing")
 		return
 	}
 
-	key, err := buildKey(line)
-	if err != nil {
-		log.Println(err)
-		return
+	selector := []string{cluster, host}
+	if id, ok := line.Tags[line.Measurement]; ok {
+		selector = append(selector, line.Measurement, id)
 	}
 
-	// log.Printf("t=%d, key='%s', values=%v\n", line.Ts.Unix(), key, line.Fields)
-	log.Printf("new data: t=%d, key='%s'", line.Ts.Unix(), key)
-	err = store.AddMetrics(key, line.Ts.Unix(), line.Fields)
+	ts := line.Ts.Unix()
+	log.Printf("ts=%d, tags=%v\n", ts, selector)
+	err := memoryStore.Write(selector, ts, line.Fields)
 	if err != nil {
-		log.Println(err)
+		log.Printf("error: %s\n", err.Error())
 	}
 }
 
 func main() {
+	startupTime := time.Now()
 	conf = loadConfiguration("config.json")
 
-	for class, info := range conf.MetricClasses {
-		metricStores[class] = newMemoryStore(info.Metrics, 1000, info.Frequency)
+	memoryStore = NewMemoryStore(conf.Metrics)
+
+	if conf.ArchiveRoot != "" && conf.RestoreLastHours > 0 {
+		d := time.Duration(conf.RestoreLastHours) * time.Hour
+		from := startupTime.Add(-d).Unix()
+		log.Printf("Restoring data since %d from '%s'...\n", from, conf.ArchiveRoot)
+		files, err := memoryStore.FromArchive(conf.ArchiveRoot, from)
+		if err != nil {
+			log.Printf("Loading archive failed: %s\n", err.Error())
+		} else {
+			log.Printf("Archive loaded (%d files)\n", files)
+		}
 	}
 
+	var wg sync.WaitGroup
 	sigs := make(chan os.Signal, 1)
 	done := make(chan bool, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		_ = <-sigs
+		log.Println("Shuting down...")
 		done <- true
 		close(done)
-		log.Println("shuting down")
 	}()
 
-	var wg sync.WaitGroup
-	wg.Add(1)
+	lastCheckpoint := startupTime
+	if conf.ArchiveRoot != "" && conf.CheckpointIntervalHours > 0 {
+		wg.Add(3)
+		go func() {
+			d := time.Duration(conf.CheckpointIntervalHours) * time.Hour
+			ticks := time.Tick(d)
+			for {
+				select {
+				case _, _ = <-done:
+					wg.Done()
+					return
+				case <-ticks:
+					log.Println("Start making checkpoint...")
+					_, err := memoryStore.ToArchive(conf.ArchiveRoot, lastCheckpoint.Unix(), time.Now().Unix())
+					if err != nil {
+						log.Printf("Making checkpoint failed: %s\n", err.Error())
+					} else {
+						log.Println("Checkpoint successfull!")
+					}
+					lastCheckpoint = time.Now()
+				}
+			}
+		}()
+	} else {
+		wg.Add(2)
+	}
 
 	go func() {
-		StartApiServer(":8080", done)
+		err := StartApiServer(":8080", done)
+		if err != nil {
+			log.Fatal(err)
+		}
 		wg.Done()
 	}()
 
-	err := lineprotocol.ReceiveNats("nats://localhost:4222", handleLine, done)
-	if err != nil {
-		log.Fatal(err)
-	}
+	go func() {
+		err := ReceiveNats(conf.Nats, handleLine, done)
+		if err != nil {
+			log.Fatal(err)
+		}
+		wg.Done()
+	}()
 
 	wg.Wait()
+
+	if conf.ArchiveRoot != "" {
+		log.Printf("Writing to '%s'...\n", conf.ArchiveRoot)
+		files, err := memoryStore.ToArchive(conf.ArchiveRoot, lastCheckpoint.Unix(), time.Now().Unix())
+		if err != nil {
+			log.Printf("Writing to archive failed: %s\n", err.Error())
+		}
+		log.Printf("Done! (%d files written)\n", files)
+	}
 }

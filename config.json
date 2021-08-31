@@ -1,16 +1,20 @@
 {
     "metrics": {
-        "node": {
-            "frequency": 3,
-            "metrics": ["load_five", "load_fifteen", "proc_total", "proc_run", "load_one"]
-        },
-        "socket": {
-            "frequency": 3,
-            "metrics": ["power", "mem_bw"]
-        },
-        "cpu": {
-            "frequency": 3,
-            "metrics": ["flops_sp", "flops_dp", "flops_any", "clock", "cpi"]
-        }
-    }
+        "load_one":     { "frequency": 3, "aggregation": null,  "scope": "node" },
+        "load_five":    { "frequency": 3, "aggregation": null,  "scope": "node" },
+        "load_fifteen": { "frequency": 3, "aggregation": null,  "scope": "node" },
+        "proc_run":     { "frequency": 3, "aggregation": null,  "scope": "node" },
+        "proc_total":   { "frequency": 3, "aggregation": null,  "scope": "node" },
+        "power":        { "frequency": 3, "aggregation": "sum", "scope": "socket" },
+        "mem_bw":       { "frequency": 3, "aggregation": "sum", "scope": "socket" },
+        "flops_sp":     { "frequency": 3, "aggregation": "sum", "scope": "cpu" },
+        "flops_dp":     { "frequency": 3, "aggregation": "sum", "scope": "cpu" },
+        "flops_any":    { "frequency": 3, "aggregation": "sum", "scope": "cpu" },
+        "clock":        { "frequency": 3, "aggregation": "avg", "scope": "cpu" },
+        "cpi":          { "frequency": 3, "aggregation": "avg", "scope": "cpu" }
+    },
+    "restore-last-hours": 20,
+    "checkpoint-interval-hours": 600,
+    "archive-root": "./archive",
+    "nats": "nats://localhost:4222"
 }

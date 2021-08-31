@@ -22,6 +22,8 @@ var bufferPool sync.Pool = sync.Pool{
 
 // Each metric on each level has it's own buffer.
 // This is where the actual values go.
+// If `cap(data)` is reached, a new buffer is created and
+// becomes the new head of a buffer list.
 type buffer struct {
 	frequency  int64   // Time between two "slots"
 	start      int64   // Timestamp of when `data[0]` was written.
@@ -41,6 +43,8 @@ func newBuffer(ts, freq int64) *buffer {
 
 // If a new buffer was created, the new head is returnd.
 // Otherwise, the existing buffer is returnd.
+// Normaly, only "newer" data should be written, but if the value would
+// end up in the same buffer anyways it is allowed.
 func (b *buffer) write(ts int64, value Float) (*buffer, error) {
 	if ts < b.start {
 		return nil, errors.New("cannot write value to buffer from past")
@@ -74,6 +78,8 @@ func (b *buffer) write(ts int64, value Float) (*buffer, error) {
 // represented by NaN. If values at the start or end are missing,
 // instead of NaN values, the second and thrid return values contain
 // the actual `from`/`to`.
+// This function goes back the buffer chain if `from` is older than the
+// currents buffer start.
 func (b *buffer) read(from, to int64) ([]Float, int64, int64, error) {
 	if from < b.start {
 		if b.prev != nil {
@@ -107,7 +113,7 @@ func (b *buffer) read(from, to int64) ([]Float, int64, int64, error) {
 
 // Could also be called "node" as this forms a node in a tree structure.
 // Called level because "node" might be confusing here.
-// Can be both a leaf or a inner node. In this structue, inner nodes can
+// Can be both a leaf or a inner node. In this tree structue, inner nodes can
 // also hold data (in `metrics`).
 type level struct {
 	lock     sync.Mutex         // There is performance to be gained by having different locks for `metrics` and `children` (Spinlock?).
@@ -144,8 +150,10 @@ func (l *level) findLevelOrCreate(selector []string) *level {
 // a lot of short-lived allocations and copies if this is
 // not the "native" level for the requested metric. There
 // is a lot of optimization potential here!
+// If this level does not have data for the requested metric, the data
+// is aggregated timestep-wise from all the children (recursively).
 // Optimization suggestion: Pass a buffer as argument onto which the values should be added.
-func (l *level) read(metric string, from, to int64, accumulation string) ([]Float, int64, int64, error) {
+func (l *level) read(metric string, from, to int64, aggregation string) ([]Float, int64, int64, error) {
 	if b, ok := l.metrics[metric]; ok {
 		// Whoo, this is the "native" level of this metric:
 		return b.read(from, to)
@@ -158,7 +166,7 @@ func (l *level) read(metric string, from, to int64, accumulation string) ([]Floa
 	if len(l.children) == 1 {
 		for _, child := range l.children {
 			child.lock.Lock()
-			data, from, to, err := child.read(metric, from, to, accumulation)
+			data, from, to, err := child.read(metric, from, to, aggregation)
 			child.lock.Unlock()
 			return data, from, to, err
 		}
@@ -168,7 +176,7 @@ func (l *level) read(metric string, from, to int64, accumulation string) ([]Floa
 	var data []Float = nil
 	for _, child := range l.children {
 		child.lock.Lock()
-		cdata, cfrom, cto, err := child.read(metric, from, to, accumulation)
+		cdata, cfrom, cto, err := child.read(metric, from, to, aggregation)
 		child.lock.Unlock()
 
 		if err != nil {
@@ -197,7 +205,7 @@ func (l *level) read(metric string, from, to int64, accumulation string) ([]Floa
 		}
 	}
 
-	switch accumulation {
+	switch aggregation {
 	case "sum":
 		return data, from, to, nil
 	case "avg":
@@ -207,7 +215,7 @@ func (l *level) read(metric string, from, to int64, accumulation string) ([]Floa
 		}
 		return data, from, to, nil
 	default:
-		return nil, 0, 0, errors.New("invalid accumulation strategy: " + accumulation)
+		return nil, 0, 0, errors.New("invalid aggregation strategy: " + aggregation)
 	}
 }
 

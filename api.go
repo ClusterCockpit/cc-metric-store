@@ -4,44 +4,30 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"math"
 	"net/http"
 	"strconv"
 	"time"
 
-	"github.com/ClusterCockpit/cc-metric-store/lineprotocol"
 	"github.com/gorilla/mux"
 )
 
-type HostData struct {
-	Host  string               `json:"host"`
-	Start int64                `json:"start"`
-	Data  []lineprotocol.Float `json:"data"`
+// Example:
+//	[
+//		{ "selector": ["emmy", "host123"], "metrics": ["load_one"] }
+//	]
+type ApiRequestBody []struct {
+	Selector []string `json:"selector"`
+	Metrics  []string `json:"metrics"`
 }
 
-type MetricData struct {
-	Hosts []HostData `json:"hosts"`
+type ApiMetricData struct {
+	From int64   `json:"from"`
+	To   int64   `json:"to"`
+	Data []Float `json:"data"`
 }
-
-type TimeseriesResponse map[string]MetricData
-
-type HostStats struct {
-	Host    string             `json:"host"`
-	Sampels int                `json:"sampels"`
-	Avg     lineprotocol.Float `json:"avg"`
-	Min     lineprotocol.Float `json:"min"`
-	Max     lineprotocol.Float `json:"max"`
-}
-
-type MetricStats struct {
-	Hosts []HostStats `json:"hosts"`
-}
-
-type StatsResponse map[string]MetricStats
 
 func handleTimeseries(rw http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	cluster := vars["cluster"]
 	from, err := strconv.ParseInt(vars["from"], 10, 64)
 	if err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
@@ -53,132 +39,40 @@ func handleTimeseries(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	values := r.URL.Query()
-	hosts := values["host"]
-	metrics := values["metric"]
-	if len(hosts) < 1 || len(metrics) < 1 {
-		http.Error(rw, "no hosts or metrics specified", http.StatusBadRequest)
+	if r.Method != http.MethodPost {
+		http.Error(rw, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	response := TimeseriesResponse{}
-	store, ok := metricStores[vars["class"]]
-	if !ok {
-		http.Error(rw, "invalid class", http.StatusInternalServerError)
-		return
-	}
-
-	for _, metric := range metrics {
-		hostsdata := []HostData{}
-		for _, host := range hosts {
-			key := cluster + ":" + host
-			data, start, err := store.GetMetric(key, metric, from, to)
-			if err != nil {
-				http.Error(rw, err.Error(), http.StatusInternalServerError)
-				return
-			}
-
-			hostsdata = append(hostsdata, HostData{
-				Host:  host,
-				Start: start,
-				Data:  data,
-			})
-		}
-		response[metric] = MetricData{
-			Hosts: hostsdata,
-		}
-	}
-
-	rw.Header().Set("Content-Type", "application/json")
-	err = json.NewEncoder(rw).Encode(response)
-	if err != nil {
-		log.Println(err.Error())
-	}
-}
-
-func handleStats(rw http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	cluster := vars["cluster"]
-	from, err := strconv.ParseInt(vars["from"], 10, 64)
-	if err != nil {
-		http.Error(rw, err.Error(), http.StatusBadRequest)
-		return
-	}
-	to, err := strconv.ParseInt(vars["to"], 10, 64)
+	bodyDec := json.NewDecoder(r.Body)
+	var reqBody ApiRequestBody
+	err = bodyDec.Decode(&reqBody)
 	if err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	values := r.URL.Query()
-	hosts := values["host"]
-	metrics := values["metric"]
-	if len(hosts) < 1 || len(metrics) < 1 {
-		http.Error(rw, "no hosts or metrics specified", http.StatusBadRequest)
-		return
-	}
-
-	response := StatsResponse{}
-	store, ok := metricStores[vars["class"]]
-	if !ok {
-		http.Error(rw, "invalid class", http.StatusInternalServerError)
-		return
-	}
-
-	for _, metric := range metrics {
-		hoststats := []HostStats{}
-		for _, host := range hosts {
-			key := cluster + ":" + host
-			min, max := math.MaxFloat64, -math.MaxFloat64
-			samples := 0
-
-			sum, err := store.Reduce(key, metric, from, to, func(t int64, sum, x lineprotocol.Float) lineprotocol.Float {
-				if math.IsNaN(float64(x)) {
-					return sum
-				}
-
-				samples += 1
-				min = math.Min(min, float64(x))
-				max = math.Max(max, float64(x))
-				return sum + x
-			}, 0.)
+	res := make([]map[string]ApiMetricData, 0, len(reqBody))
+	for _, req := range reqBody {
+		metrics := make(map[string]ApiMetricData)
+		for _, metric := range req.Metrics {
+			data, f, t, err := memoryStore.Read(req.Selector, metric, from, to)
 			if err != nil {
 				http.Error(rw, err.Error(), http.StatusInternalServerError)
 				return
 			}
 
-			hoststats = append(hoststats, HostStats{
-				Host:    host,
-				Sampels: samples,
-				Avg:     sum / lineprotocol.Float(samples),
-				Min:     lineprotocol.Float(min),
-				Max:     lineprotocol.Float(max),
-			})
+			metrics[metric] = ApiMetricData{
+				From: f,
+				To:   t,
+				Data: data,
+			}
 		}
-		response[metric] = MetricStats{
-			Hosts: hoststats,
-		}
+		res = append(res, metrics)
 	}
 
 	rw.Header().Set("Content-Type", "application/json")
-	err = json.NewEncoder(rw).Encode(response)
-	if err != nil {
-		log.Println(err.Error())
-	}
-}
-
-func handlePeak(rw http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	cluster := vars["cluster"]
-	store, ok := metricStores[vars["class"]]
-	if !ok {
-		http.Error(rw, "invalid class", http.StatusInternalServerError)
-		return
-	}
-
-	response := store.Peak(cluster + ":")
-	rw.Header().Set("Content-Type", "application/json")
-	err := json.NewEncoder(rw).Encode(response)
+	err = json.NewEncoder(rw).Encode(res)
 	if err != nil {
 		log.Println(err.Error())
 	}
@@ -187,9 +81,7 @@ func handlePeak(rw http.ResponseWriter, r *http.Request) {
 func StartApiServer(address string, done chan bool) error {
 	r := mux.NewRouter()
 
-	r.HandleFunc("/api/{cluster}/{class:(?:node|socket|cpu)}/{from:[0-9]+}/{to:[0-9]+}/timeseries", handleTimeseries)
-	r.HandleFunc("/api/{cluster}/{class:(?:node|socket|cpu)}/{from:[0-9]+}/{to:[0-9]+}/stats", handleStats)
-	r.HandleFunc("/api/{cluster}/{class:(?:node|socket|cpu)}/peak", handlePeak)
+	r.HandleFunc("/api/{from:[0-9]+}/{to:[0-9]+}/timeseries", handleTimeseries)
 
 	server := &http.Server{
 		Handler:      r,
