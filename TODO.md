@@ -1,3 +1,22 @@
-# Missing Testcases
+# TODO
 
-
+- Delete this file and create more GitHub issues instead?
+- Missing Testcases:
+    - Port at least all blackbox tests from the "old" `MemoryStore` to the new implementation
+    - Check for corner cases that should fail gracefully
+    - Write a more realistic `ToArchive`/`FromArchive` tests
+    - Test edgecases for horizontal aggregations
+- Release Data
+    - Implement API endpoint for releasing old data
+    - Make sure data is written to disk before it is released
+    - Automatically free up old buffers periodically?
+- Implement basic support for aggregations over time (stats like min/max/avg)
+    - Optimization: Once a buffer is full, calculate min, max and avg
+        - Calculate averages buffer-wise, average weighted by length of buffer
+- Implement basic support for query of most recent value for every metric on every host
+- Optimize horizontal aggregations
+- Optimize locking of levels in the tree structure
+    - In 99.9% of cases, no new level will need to be created, so all lookups into `level.children` will be read only
+    - `level.metrics` will be modified more often and will accesses will need to be serialized here
+    - Suggestion: Use a proper Mutex for `level.metrics`, but something read-optimized and possibly lock-free for `level.children`
+- ...

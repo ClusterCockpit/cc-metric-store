@@ -1,33 +1,98 @@
 # ClusterCockpit Metric Store
 
-Unusable yet. Go look at the [GitHub Issues](https://github.com/ClusterCockpit/cc-metric-store/issues) for a progress overview.
+![test workflow](https://github.com/ClusterCockpit/cc-metric-store/actions/workflows/test.yml/badge.svg)
+
+Barely unusable yet. Go look at the [GitHub Issues](https://github.com/ClusterCockpit/cc-metric-store/issues) for a progress overview.
 
 ### REST API Endpoints
 
-The following endpoints are implemented (not properly tested, subject to change):
-
-- *from* and *to* need to be Unix timestamps in seconds
-- *class* needs to be `node`, `socket` or `cpu` (The class of each metric is documented in [cc-metric-collector](https://github.com/ClusterCockpit/cc-metric-collector))
-- If the *class* is `socket`, the hostname needs to be appended by `:s<socket-index>`. The same goes for `cpu` and `:c<cpu-index>`
-- Fetch all datapoints from *from* to *to* for the hosts *h1*, *h2* and *h3* and metrics *m1* and *m2*
-    - Request: `GET /api/<cluster>/<class>/<from>/<to>/timeseries?host=<h1>&host=<h2>&host=<h3>&metric=<m1>&metric=<m2>&...`
-    - Response: `{ "m1": { "hosts": [{ "host": "h1", "start": <start-time>, "data": [1.0, 2.0, 3.0, ...] }, { "host": "h2" , ...}, { "host": "h3", ...}] }, ... }`
-- Fetch the average, minimum and maximum values from *from* to *to* for the hosts *h1*, *h2* and *h3* and metrics *m1* and *m2*
-    - Request: `GET /api/<cluster>/<class>/<from>/<to>/stats?host=<h1>&host=<h2>&host=<h3>&metric=<m1>&metric=<m2>&...`
-    - Response: `{ "m1": { "hosts": [{ "host": "h1", "samples": 123, "avg": 0.5, "min": 0.0, "max": 1.0 }, ...] }, ... }`
-    - `samples` is the number of actual measurements taken into account. This can be lower than expected if data ponts are missing
-- Fetch the newest value for each host and metric on a specified cluster
-    - Request: `GET /api/<cluster>/<class>/peak`
-    - Response: `{ "host1": { "metric1": 1., "metric2": 2., ... }, "host2": { ... }, ... }`
+_TODO... (For now, look at the examples below)_
 
 ### Run tests
 
+Some benchmarks concurrently access the `MemoryStore`, so enabling the
+[Race Detector](https://golang.org/doc/articles/race_detector) might be useful.
+The benchmarks also work as tests as they do check if the returned values are as
+expected.
+
 ```sh
-# Test the line protocol parser
-go test ./lineprotocol -v
-# Test the memory store
-go test . -v
+# Tests only
+go test -v ./...
+
+# Benchmarks as well
+go test -bench=. -race -v ./...
 ```
+
+### What are these selectors mentioned in the code and API?
+
+Tags in InfluxDB are used to build indexes over the stored data. InfluxDB-Tags have no
+relation to each other, they do not depend on each other and have no hierarchy.
+Different tags build up different indexes.
+
+This project also works as a time-series database and uses the InfluxDB line protocol.
+Unlike InfluxDB, the data is indexed by one single strictly hierarchical tree structure.
+A selector is build out of the tags in the InfluxDB line protocol, and can be used to select
+a node (not in the sense of a compute node, can also be a socket, cpu, ...) in that tree.
+The implementation calls those nodes `level` to avoid confusion. It is impossible to access data
+only by knowing the *socket* or *cpu* tag, all higher up levels have to be specified as well.
+
+Metrics have to be specified in advance! Those are taken from the *fields* of a line-protocol message.
+New levels will be created on the fly at any depth, meaning that the clusters, hosts, sockets, number of cpus,
+and so on do *not* have to be known at startup. Every level can hold all kinds of metrics. If a level is asked for
+metrics it does not have itself, *all* child-levels will be asked for their values for that metric and
+the data will be aggregated on a per-timestep basis.
+
+A.t.m., the *cc-metric-collector* does not provide a *socket* tag for *cpu* metrics, so currently,
+the tree structure looks like this (example selector: `["cluster1", "host1", "cpu", "0"]`):
+
+- cluster1
+  - host1
+    - socket
+      - 0
+      - 1
+    - cpu
+      - 0
+      - 1
+      - 2
+      - ...
+  - host2
+  - ...
+- cluster2
+- ...
+
+The plan is later to have the structure look like this (for this, the socket of every cpu must be kown in advance or provided as tag, example selector: `["cluster1", "host1", "socket0", "cpu0"]`):
+
+- cluster1
+  - host1
+    - socket0
+      - cpu0
+      - cpu1
+      - cpu2
+      - ...
+    - socket1
+      - cpu8
+      - cpu9
+      - cpu10
+      - ...
+    - ...
+  - host2
+  - ...
+- cluster2
+- ...
+
+### Config file
+
+- `metrics`: Map of metric-name to objects with the following properties
+    - `frequency`: Timestep/Interval/Resolution of this metric
+    - `aggregation`: Can be `"sum"`, `"avg"` or `null`.
+        - `null` means "horizontal" aggregation is disabled
+        - `"sum"` means that values from the child levels are summed up for the parent level
+        - `"avg"` means that values from the child levels are averaged for the parent level
+    - `scope`: Unused at the moment, should be something like `"node"`, `"socket"` or `"cpu"`
+- `nats`: Url of NATS.io server (The `updates` channel will be subscribed for metrics)
+- `archive-root`: Directory to be used as archive (__Unimplemented__)
+- `restore-last-hours`: After restart, load data from the past *X* hours back to memory (__Unimplemented__)
+- `checkpoint-interval-hours`: Every *X* hours, write currently held data to disk (__Unimplemented__)
 
 ### Test the complete setup (excluding ClusterCockpit itself)
 
@@ -59,7 +124,8 @@ Second, build and start start the [cc-metric-collector](https://github.com/Clust
 }
 ```
 
-Third, build and start the metric store.
+Third, build and start the metric store. For this example here, the `config.json` file
+already in the repository should work just fine.
 
 ```sh
 # Assuming you have a clone of this repo in ./cc-metric-store:
@@ -69,44 +135,17 @@ go build
 ./cc-metric-store
 ```
 
-Use this as `config.json`:
-
-```json
-{
-    "metrics": {
-        "node": {
-            "frequency": 3,
-            "metrics": ["load_five", "load_fifteen", "proc_total", "proc_run", "load_one"]
-        },
-        "socket": {
-            "frequency": 3,
-            "metrics": ["power", "mem_bw"]
-        },
-        "cpu": {
-            "frequency": 3,
-            "metrics": ["flops_sp", "flops_dp", "flops_any", "clock", "cpi"]
-        }
-    }
-}
-```
-
 And finally, use the API to fetch some data:
 
 ```sh
 # If the collector and store and nats-server have been running for at least 60 seconds on the same host, you may run:
-curl -D - "http://localhost:8080/api/testcluster/node/$(expr $(date +%s) - 60)/$(date +%s)/timeseries?metric=load_one&host=$(hostname)"
+curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "[ { \"selector\": [\"testcluster\", \"$(hostname)\"], \"metrics\": [\"load_one\"] } ]"
 
-# or:
-curl -D - "http://localhost:8080/api/testcluster/socket/$(expr $(date +%s) - 60)/$(date +%s)/timeseries?metric=mem_bw&metric=power&host=$(hostname):s0"
+# Get flops_any for all CPUs:
+curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "[ { \"selector\": [\"testcluster\", \"$(hostname)\", \"cpu\"], \"metrics\": [\"flops_any\"] } ]"
 
-# or:
-curl -D - "http://localhost:8080/api/testcluster/cpu/$(expr $(date +%s) - 60)/$(date +%s)/timeseries?metric=flops_any&host=$(hostname):c0&host=$(hostname):c1"
-
-# or:
-curl -D - "http://localhost:8080/api/testcluster/node/peak"
-
-# or:
-curl -D - "http://localhost:8080/api/testcluster/socket/$(expr $(date +%s) - 60)/$(date +%s)/stats?metric=mem_bw&metric=power&host=$(hostname):s0"
+# Get flops_any for CPU 0:
+curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "[ { \"selector\": [\"testcluster\", \"$(hostname)\", \"cpu\", \"0\"], \"metrics\": [\"flops_any\"] } ]"
 
 # ...
 ```
