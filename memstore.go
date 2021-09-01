@@ -116,31 +116,43 @@ func (b *buffer) read(from, to int64) ([]Float, int64, int64, error) {
 // Can be both a leaf or a inner node. In this tree structue, inner nodes can
 // also hold data (in `metrics`).
 type level struct {
-	lock     sync.Mutex         // There is performance to be gained by having different locks for `metrics` and `children` (Spinlock?).
+	lock     sync.RWMutex       //
 	metrics  map[string]*buffer // Every level can store metrics.
-	children map[string]*level  // Sub-granularities/nodes. Use `sync.Map`?
+	children map[string]*level  // Lower levels.
 }
 
-// Caution: the lock of the returned level will be LOCKED.
 // Find the correct level for the given selector, creating it if
 // it does not exist. Example selector in the context of the
 // ClusterCockpit could be: []string{ "emmy", "host123", "cpu", "0" }
 // This function would probably benefit a lot from `level.children` beeing a `sync.Map`?
 func (l *level) findLevelOrCreate(selector []string) *level {
-	l.lock.Lock()
 	if len(selector) == 0 {
 		return l
 	}
 
+	// Allow concurrent reads:
+	l.lock.RLock()
 	child, ok := l.children[selector[0]]
-	if !ok {
-		child = &level{
-			metrics:  make(map[string]*buffer),
-			children: make(map[string]*level),
-		}
-		l.children[selector[0]] = child
+	l.lock.RUnlock()
+	if ok {
+		return child.findLevelOrCreate(selector[1:])
 	}
 
+	// The level does not exist, take write lock for unqiue access:
+	l.lock.Lock()
+	// While this thread waited for the write lock, another thread
+	// could have created the child node.
+	child, ok = l.children[selector[0]]
+	if ok {
+		l.lock.Unlock()
+		return child.findLevelOrCreate(selector[1:])
+	}
+
+	child = &level{
+		metrics:  make(map[string]*buffer),
+		children: make(map[string]*level),
+	}
+	l.children[selector[0]] = child
 	l.lock.Unlock()
 	return child.findLevelOrCreate(selector[1:])
 }
@@ -238,6 +250,7 @@ func NewMemoryStore(metrics map[string]MetricConfig) *MemoryStore {
 // Look at `findLevelOrCreate` for how selectors work.
 func (m *MemoryStore) Write(selector []string, ts int64, metrics []Metric) error {
 	l := m.root.findLevelOrCreate(selector)
+	l.lock.Lock()
 	defer l.lock.Unlock()
 
 	for _, metric := range metrics {
@@ -268,7 +281,8 @@ func (m *MemoryStore) Write(selector []string, ts int64, metrics []Metric) error
 
 func (m *MemoryStore) Read(selector []string, metric string, from, to int64) ([]Float, int64, int64, error) {
 	l := m.root.findLevelOrCreate(selector)
-	defer l.lock.Unlock()
+	l.lock.RLock()
+	defer l.lock.RUnlock()
 
 	if from > to {
 		return nil, 0, 0, errors.New("invalid time range")

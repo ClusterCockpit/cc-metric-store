@@ -32,16 +32,16 @@ type ArchiveFile struct {
 func (m *MemoryStore) ToArchive(archiveRoot string, from, to int64) (int, error) {
 	levels := make([]*level, 0)
 	selectors := make([][]string, 0)
-	m.root.lock.Lock()
+	m.root.lock.RLock()
 	for sel1, l1 := range m.root.children {
-		l1.lock.Lock()
+		l1.lock.RLock()
 		for sel2, l2 := range l1.children {
 			levels = append(levels, l2)
 			selectors = append(selectors, []string{sel1, sel2})
 		}
-		l1.lock.Unlock()
+		l1.lock.RUnlock()
 	}
-	m.root.lock.Unlock()
+	m.root.lock.RUnlock()
 
 	for i := 0; i < len(levels); i++ {
 		dir := path.Join(archiveRoot, path.Join(selectors[i]...))
@@ -55,8 +55,8 @@ func (m *MemoryStore) ToArchive(archiveRoot string, from, to int64) (int, error)
 }
 
 func (l *level) toArchiveFile(from, to int64) (*ArchiveFile, error) {
-	l.lock.Lock()
-	defer l.lock.Unlock()
+	l.lock.RLock()
+	defer l.lock.RUnlock()
 
 	retval := &ArchiveFile{
 		From:     from,
