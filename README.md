@@ -1,6 +1,6 @@
 # ClusterCockpit Metric Store
 
-![test workflow](https://github.com/ClusterCockpit/cc-metric-store/actions/workflows/test.yml/badge.svg)
+[![Build & Test](https://github.com/ClusterCockpit/cc-metric-store/actions/workflows/test.yml/badge.svg)](https://github.com/ClusterCockpit/cc-metric-store/actions/workflows/test.yml)
 
 Barely unusable yet. Go look at the [GitHub Issues](https://github.com/ClusterCockpit/cc-metric-store/issues) for a progress overview.
 
@@ -27,7 +27,7 @@ go test -bench=. -race -v ./...
 
 Tags in InfluxDB are used to build indexes over the stored data. InfluxDB-Tags have no
 relation to each other, they do not depend on each other and have no hierarchy.
-Different tags build up different indexes.
+Different tags build up different indexes (I am no expert at all, but this is how i think they work).
 
 This project also works as a time-series database and uses the InfluxDB line protocol.
 Unlike InfluxDB, the data is indexed by one single strictly hierarchical tree structure.
@@ -83,16 +83,16 @@ The plan is later to have the structure look like this (for this, the socket of 
 ### Config file
 
 - `metrics`: Map of metric-name to objects with the following properties
-    - `frequency`: Timestep/Interval/Resolution of this metric
-    - `aggregation`: Can be `"sum"`, `"avg"` or `null`.
-        - `null` means "horizontal" aggregation is disabled
+    - `frequency`: Timestep/Interval/Resolution of this metric (In seconds)
+    - `aggregation`: Can be `"sum"`, `"avg"` or `null`
+        - `null` means aggregation across nodes is forbidden for this metric
         - `"sum"` means that values from the child levels are summed up for the parent level
         - `"avg"` means that values from the child levels are averaged for the parent level
     - `scope`: Unused at the moment, should be something like `"node"`, `"socket"` or `"cpu"`
 - `nats`: Url of NATS.io server (The `updates` channel will be subscribed for metrics)
-- `archive-root`: Directory to be used as archive (__Unimplemented__)
-- `restore-last-hours`: After restart, load data from the past *X* hours back to memory (__Unimplemented__)
-- `checkpoint-interval-hours`: Every *X* hours, write currently held data to disk (__Unimplemented__)
+- `archive-root`: Directory to be used as archive
+- `restore-last-hours`: After restart, load data from the past *X* hours back to memory
+- `checkpoint-interval-hours`: Every *X* hours, write currently held data to disk
 
 ### Test the complete setup (excluding ClusterCockpit itself)
 
@@ -106,7 +106,7 @@ docker pull nats:latest
 docker run -p 4222:4222 -ti nats:latest
 ```
 
-Second, build and start start the [cc-metric-collector](https://github.com/ClusterCockpit/cc-metric-collector) using the following as `config.json`:
+Second, build and start the [cc-metric-collector](https://github.com/ClusterCockpit/cc-metric-collector) using the following as `config.json`:
 
 ```json
 {
@@ -139,13 +139,20 @@ And finally, use the API to fetch some data:
 
 ```sh
 # If the collector and store and nats-server have been running for at least 60 seconds on the same host, you may run:
-curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "[ { \"selector\": [\"testcluster\", \"$(hostname)\"], \"metrics\": [\"load_one\"] } ]"
+curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\"]], \"metrics\": [\"load_one\"] }"
 
 # Get flops_any for all CPUs:
-curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "[ { \"selector\": [\"testcluster\", \"$(hostname)\", \"cpu\"], \"metrics\": [\"flops_any\"] } ]"
+curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\", \"cpu\"]], \"metrics\": [\"flops_any\"] }"
 
 # Get flops_any for CPU 0:
-curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "[ { \"selector\": [\"testcluster\", \"$(hostname)\", \"cpu\", \"0\"], \"metrics\": [\"flops_any\"] } ]"
+curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\", \"cpu\", \"0\"]], \"metrics\": [\"flops_any\"] }"
+
+# Stats for load_one and proc_run:
+curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/stats" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\"]], \"metrics\": [\"load_one\", \"proc_run\"] }"
+
+# Stats for *all* CPUs aggregated both from CPU to node and over time:
+curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/stats" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\", \"cpu\"]], \"metrics\": [\"flops_sp\", \"flops_dp\"] }"
+
 
 # ...
 ```

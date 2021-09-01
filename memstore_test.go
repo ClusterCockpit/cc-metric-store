@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"sync"
 	"testing"
 )
@@ -169,6 +170,75 @@ func TestMemoryStoreAggregation(t *testing.T) {
 			t.Errorf("expected: %f, got: %f", expected, bdata[i])
 			return
 		}
+	}
+}
+
+func TestMemoryStoreStats(t *testing.T) {
+	count := 3000
+	store := NewMemoryStore(map[string]MetricConfig{
+		"a": {Frequency: 1},
+		"b": {Frequency: 1, Aggregation: "avg"},
+	})
+
+	sel1 := []string{"cluster", "host1"}
+	sel2 := []string{"cluster", "host2", "left"}
+	sel3 := []string{"cluster", "host2", "right"}
+
+	samples := 0
+	asum, amin, amax := 0., math.MaxFloat32, -math.MaxFloat32
+	bsum, bmin, bmax := 0., math.MaxFloat32, -math.MaxFloat32
+
+	for i := 0; i < count; i++ {
+		if i%5 == 0 {
+			// Skip some writes, test if samples is calculated correctly
+			continue
+		}
+
+		samples += 1
+		a := float64(rand.Int()%100 - 50)
+		asum += a
+		amin = math.Min(amin, a)
+		amax = math.Max(amax, a)
+		b := float64(rand.Int()%100 - 50)
+		bsum += b * 2
+		bmin = math.Min(bmin, b)
+		bmax = math.Max(bmax, b)
+
+		store.Write(sel1, int64(i), []Metric{
+			{Name: "a", Value: Float(a)},
+		})
+		store.Write(sel2, int64(i), []Metric{
+			{Name: "b", Value: Float(b)},
+		})
+		store.Write(sel3, int64(i), []Metric{
+			{Name: "b", Value: Float(b)},
+		})
+	}
+
+	stats, from, to, err := store.Stats(sel1, "a", 0, int64(count))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if from != 1 || to != int64(count) || stats.Samples != samples {
+		t.Fatalf("unexpected: from=%d, to=%d, stats.Samples=%d (expected samples=%d)\n", from, to, stats.Samples, samples)
+	}
+
+	if stats.Avg != Float(asum/float64(samples)) || stats.Min != Float(amin) || stats.Max != Float(amax) {
+		t.Fatalf("wrong stats: %#v\n", stats)
+	}
+
+	stats, from, to, err = store.Stats([]string{"cluster", "host2"}, "b", 0, int64(count))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if from != 1 || to != int64(count) || stats.Samples != samples*2 {
+		t.Fatalf("unexpected: from=%d, to=%d, stats.Samples=%d (expected samples=%d)\n", from, to, stats.Samples, samples*2)
+	}
+
+	if stats.Avg != Float(bsum/float64(samples*2)) || stats.Min != Float(bmin) || stats.Max != Float(bmax) {
+		t.Fatalf("wrong stats: %#v (expected: avg=%f, min=%f, max=%f)\n", stats, bsum/float64(samples*2), bmin, bmax)
 	}
 }
 

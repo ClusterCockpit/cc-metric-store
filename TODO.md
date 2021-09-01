@@ -10,13 +10,10 @@
     - Implement API endpoint for releasing old data
     - Make sure data is written to disk before it is released
     - Automatically free up old buffers periodically?
-- Implement basic support for aggregations over time (stats like min/max/avg)
-    - Optimization: Once a buffer is full, calculate min, max and avg
-        - Calculate averages buffer-wise, average weighted by length of buffer
+- Optimization: Once a buffer is full, calculate min, max and avg
+    - Calculate averages buffer-wise, average weighted by length of buffer
+    - Only the head-buffer needs to be fully traversed
 - Implement basic support for query of most recent value for every metric on every host
 - Optimize horizontal aggregations
-- Optimize locking of levels in the tree structure
-    - In 99.9% of cases, no new level will need to be created, so all lookups into `level.children` will be read only
-    - `level.metrics` will be modified more often and will accesses will need to be serialized here
-    - Suggestion: Use a proper Mutex for `level.metrics`, but something read-optimized and possibly lock-free for `level.children`
+- All metrics are known in advance, including the level: Use this to replace `level.metrics` hashmap by slice?
 - ...
