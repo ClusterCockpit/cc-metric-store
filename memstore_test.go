@@ -302,6 +302,56 @@ func TestMemoryStoreArchive(t *testing.T) {
 	}
 }
 
+func TestMemoryStoreFree(t *testing.T) {
+	store := NewMemoryStore(map[string]MetricConfig{
+		"a": {Frequency: 1},
+		"b": {Frequency: 2},
+	})
+
+	count := 3000
+	sel := []string{"cluster", "host", "1"}
+	for i := 0; i < count; i++ {
+		err := store.Write(sel, int64(i), []Metric{
+			{Name: "a", Value: Float(i)},
+			{Name: "b", Value: Float(i)},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	n, err := store.Free([]string{"cluster", "host"}, int64(BUFFER_CAP*2)+100)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if n != 3 {
+		t.Fatal("two buffers expected to be released")
+	}
+
+	adata, from, to, err := store.Read([]string{"cluster", "host", "1"}, "a", 0, int64(count))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if from != int64(BUFFER_CAP*2) || to != int64(count) || len(adata) != count-2*BUFFER_CAP {
+		t.Fatalf("unexpected values from call to `Read`: from=%d, to=%d, len=%d", from, to, len(adata))
+	}
+
+	bdata, from, to, err := store.Read([]string{"cluster", "host", "1"}, "b", 0, int64(count))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if from != int64(BUFFER_CAP*2) || to != int64(count) || len(bdata) != (count-2*BUFFER_CAP)/2 {
+		t.Fatalf("unexpected values from call to `Read`: from=%d, to=%d, len=%d", from, to, len(bdata))
+	}
+
+	if adata[0] != Float(BUFFER_CAP*2) || adata[len(adata)-1] != Float(count-1) {
+		t.Fatal("wrong values")
+	}
+}
+
 func BenchmarkMemoryStoreConcurrentWrites(b *testing.B) {
 	frequency := int64(5)
 	count := b.N
