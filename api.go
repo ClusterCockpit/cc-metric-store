@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -143,11 +144,55 @@ func handleStats(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func handleFree(rw http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	to, err := strconv.ParseInt(vars["to"], 10, 64)
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// TODO: lastCheckpoint might be modified by different go-routines.
+	// Load it using the sync/atomic package?
+	freeUpTo := lastCheckpoint.Unix()
+	if to < freeUpTo {
+		freeUpTo = to
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(rw, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	bodyDec := json.NewDecoder(r.Body)
+	var selectors [][]string
+	err = bodyDec.Decode(&selectors)
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	n := 0
+	for _, sel := range selectors {
+		bn, err := memoryStore.Free(sel, freeUpTo)
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		n += bn
+	}
+
+	rw.WriteHeader(http.StatusOK)
+	rw.Write([]byte(fmt.Sprintf("buffers freed: %d\n", n)))
+}
+
 func StartApiServer(address string, done chan bool) error {
 	r := mux.NewRouter()
 
 	r.HandleFunc("/api/{from:[0-9]+}/{to:[0-9]+}/timeseries", handleTimeseries)
 	r.HandleFunc("/api/{from:[0-9]+}/{to:[0-9]+}/stats", handleStats)
+	r.HandleFunc("/api/{to:[0-9]+}/free", handleFree)
 
 	server := &http.Server{
 		Handler:      r,

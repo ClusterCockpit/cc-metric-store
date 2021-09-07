@@ -13,7 +13,7 @@ type Stats struct {
 }
 
 // Return `Stats` by value for less allocations/GC?
-func (b *buffer) stats(from, to int64) (*Stats, int64, int64, error) {
+func (b *buffer) stats(from, to int64) (Stats, int64, int64, error) {
 	if from < b.start {
 		if b.prev != nil {
 			return b.prev.stats(from, to)
@@ -50,7 +50,7 @@ func (b *buffer) stats(from, to int64) (*Stats, int64, int64, error) {
 		max = math.Max(max, xf)
 	}
 
-	return &Stats{
+	return Stats{
 		Samples: samples,
 		Avg:     Float(sum) / Float(samples),
 		Min:     Float(min),
@@ -61,59 +61,56 @@ func (b *buffer) stats(from, to int64) (*Stats, int64, int64, error) {
 // This function assmumes that `l.lock` is LOCKED!
 // It basically works just like level.read but calculates min/max/avg for that data level.read would return.
 // TODO: Make this DRY?
-func (l *level) stats(metric string, from, to int64, aggregation string) (*Stats, int64, int64, error) {
+func (l *level) stats(metric string, from, to int64, aggregation string) (Stats, int64, int64, error) {
 	if b, ok := l.metrics[metric]; ok {
 		return b.stats(from, to)
 	}
 
 	if len(l.children) == 0 {
-		return nil, 0, 0, errors.New("no data for that metric/level")
+		return Stats{}, 0, 0, ErrNoData
 	}
 
-	if len(l.children) == 1 {
-		for _, child := range l.children {
-			child.lock.Lock()
-			stats, from, to, err := child.stats(metric, from, to, aggregation)
-			child.lock.Unlock()
-			return stats, from, to, err
-		}
-	}
-
+	n := 0
 	samples := 0
-	avgSum, min, max := Float(0), Float(math.MaxFloat32), Float(-math.MaxFloat32)
+	avg, min, max := Float(0), Float(math.MaxFloat32), Float(-math.MaxFloat32)
 	for _, child := range l.children {
-		child.lock.Lock()
+		child.lock.RLock()
 		stats, cfrom, cto, err := child.stats(metric, from, to, aggregation)
-		child.lock.Unlock()
+		child.lock.RUnlock()
+
+		if err == ErrNoData {
+			continue
+		}
 
 		if err != nil {
-			return nil, 0, 0, err
+			return Stats{}, 0, 0, err
 		}
 
-		if cfrom != from || cto != to {
-			// See level.read for more on this
-			if samples == 0 {
-				from = cfrom
-				to = cto
-			} else {
-				return nil, 0, 0, errors.New("data for metrics at child levels does not align")
-			}
+		if n == 0 {
+			from = cfrom
+			to = cto
+		} else if cfrom != from || cto != to {
+			return Stats{}, 0, 0, ErrDataDoesNotAlign
 		}
 
 		samples += stats.Samples
-		avgSum += stats.Avg
+		avg += stats.Avg
 		min = Float(math.Min(float64(min), float64(stats.Min)))
 		max = Float(math.Max(float64(max), float64(stats.Max)))
+		n += 1
 	}
 
-	avg := avgSum
+	if n == 0 {
+		return Stats{}, 0, 0, ErrNoData
+	}
+
 	if aggregation == "avg" {
-		avg /= Float(len(l.children))
+		avg /= Float(n)
 	} else if aggregation != "sum" {
-		return nil, 0, 0, errors.New("invalid aggregation strategy: " + aggregation)
+		return Stats{}, 0, 0, errors.New("invalid aggregation strategy: " + aggregation)
 	}
 
-	return &Stats{
+	return Stats{
 		Samples: samples,
 		Avg:     avg,
 		Min:     min,
@@ -135,5 +132,6 @@ func (m *MemoryStore) Stats(selector []string, metric string, from, to int64) (*
 		return nil, 0, 0, errors.New("unkown metric: " + metric)
 	}
 
-	return l.stats(metric, from, to, minfo.Aggregation)
+	stats, from, to, err := l.stats(metric, from, to, minfo.Aggregation)
+	return &stats, from, to, err
 }

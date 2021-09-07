@@ -65,9 +65,14 @@ func (l *level) toArchiveFile(from, to int64) (*ArchiveFile, error) {
 	}
 
 	for metric, b := range l.metrics {
-		data, start, _, err := b.read(from, to)
+		data := make([]Float, (to-from)/b.frequency)
+		data, start, end, err := b.read(from, to, data)
 		if err != nil {
 			return nil, err
+		}
+
+		for i := int((end - start) / b.frequency); i < len(data); i++ {
+			data[i] = NaN
 		}
 
 		retval.Metrics[metric] = &ArchiveMetrics{
