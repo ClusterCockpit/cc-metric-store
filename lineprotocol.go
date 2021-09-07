@@ -9,6 +9,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -174,29 +175,62 @@ func ReceiveTCP(address string, handleLine func(line *Line), done chan bool) err
 // Connect to a nats server and subscribe to "updates". This is a blocking
 // function. handleLine will be called for each line recieved via nats.
 // Send `true` through the done channel for gracefull termination.
-func ReceiveNats(address string, handleLine func(line *Line), done chan bool) error {
+func ReceiveNats(address string, handleLine func(line *Line), workers int, done chan bool) error {
 	nc, err := nats.Connect(nats.DefaultURL)
 	if err != nil {
 		return err
 	}
 	defer nc.Close()
 
-	// Subscribe
-	if _, err := nc.Subscribe("updates", func(m *nats.Msg) {
-		line, err := Parse(string(m.Data))
-		if err != nil {
-			log.Printf("parsing line failed: %s\n", err.Error())
-			return
+	var sub *nats.Subscription
+
+	if workers < 2 {
+		sub, err = nc.Subscribe("updates", func(m *nats.Msg) {
+			line, err := Parse(string(m.Data))
+			if err != nil {
+				log.Printf("parsing line failed: %s\n", err.Error())
+				return
+			}
+
+			handleLine(line)
+		})
+	} else {
+		msgs := make(chan *nats.Msg, 16)
+		var wg sync.WaitGroup
+		wg.Add(workers)
+
+		for i := 0; i < workers; i++ {
+			go func() {
+				for msg := range msgs {
+					line, err := Parse(string(msg.Data))
+					if err != nil {
+						log.Printf("parsing line failed: %s\n", err.Error())
+						return
+					}
+
+					handleLine(line)
+				}
+			}()
 		}
 
-		handleLine(line)
-	}); err != nil {
+		sub, err = nc.Subscribe("updates", func(m *nats.Msg) {
+			msgs <- m
+		})
+
+		_ = <-done
+		close(msgs)
+		wg.Wait()
+	}
+
+	if err != nil {
 		return err
 	}
 
 	log.Printf("NATS subscription to 'updates' on '%s' established\n", address)
 	for {
 		_ = <-done
+		sub.Unsubscribe()
+		nc.Close()
 		log.Println("NATS connection closed")
 		return nil
 	}

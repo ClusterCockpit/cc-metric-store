@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -19,16 +20,16 @@ type MetricConfig struct {
 
 type Config struct {
 	Metrics                 map[string]MetricConfig `json:"metrics"`
+	RetentionHours          int                     `json:"retention-hours"`
 	RestoreLastHours        int                     `json:"restore-last-hours"`
 	CheckpointIntervalHours int                     `json:"checkpoint-interval-hours"`
 	ArchiveRoot             string                  `json:"archive-root"`
 	Nats                    string                  `json:"nats"`
 }
 
-const KEY_SEPERATOR string = "."
-
 var conf Config
 var memoryStore *MemoryStore = nil
+var lastCheckpoint time.Time
 
 func loadConfiguration(file string) Config {
 	var config Config
@@ -97,7 +98,7 @@ func main() {
 		close(done)
 	}()
 
-	lastCheckpoint := startupTime
+	lastCheckpoint = startupTime
 	if conf.ArchiveRoot != "" && conf.CheckpointIntervalHours > 0 {
 		wg.Add(3)
 		go func() {
@@ -105,18 +106,29 @@ func main() {
 			ticks := time.Tick(d)
 			for {
 				select {
-				case _, _ = <-done:
+				case <-done:
 					wg.Done()
 					return
 				case <-ticks:
 					log.Println("Start making checkpoint...")
-					_, err := memoryStore.ToArchive(conf.ArchiveRoot, lastCheckpoint.Unix(), time.Now().Unix())
+					now := time.Now()
+					n, err := memoryStore.ToArchive(conf.ArchiveRoot, lastCheckpoint.Unix(), now.Unix())
 					if err != nil {
 						log.Printf("Making checkpoint failed: %s\n", err.Error())
 					} else {
-						log.Println("Checkpoint successfull!")
+						log.Printf("Checkpoint successfull (%d files written)\n", n)
 					}
-					lastCheckpoint = time.Now()
+					lastCheckpoint = now
+
+					if conf.RetentionHours > 0 {
+						log.Println("Freeing up memory...")
+						t := now.Add(-time.Duration(conf.RetentionHours) * time.Hour)
+						freed, err := memoryStore.Free([]string{}, t.Unix())
+						if err != nil {
+							log.Printf("Freeing up memory failed: %s\n", err.Error())
+						}
+						log.Printf("%d values freed\n", freed)
+					}
 				}
 			}
 		}()
@@ -133,7 +145,7 @@ func main() {
 	}()
 
 	go func() {
-		err := ReceiveNats(conf.Nats, handleLine, done)
+		err := ReceiveNats(conf.Nats, handleLine, runtime.NumCPU()-1, done)
 		if err != nil {
 			log.Fatal(err)
 		}

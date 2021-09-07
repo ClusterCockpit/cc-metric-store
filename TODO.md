@@ -14,6 +14,5 @@
     - Calculate averages buffer-wise, average weighted by length of buffer
     - Only the head-buffer needs to be fully traversed
 - Implement basic support for query of most recent value for every metric on every host
-- Optimize horizontal aggregations
 - All metrics are known in advance, including the level: Use this to replace `level.metrics` hashmap by slice?
 - ...
