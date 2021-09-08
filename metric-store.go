@@ -59,7 +59,7 @@ func handleLine(line *Line) {
 
 	selector := []string{cluster, host}
 	if id, ok := line.Tags[line.Measurement]; ok {
-		selector = append(selector, line.Measurement, id)
+		selector = append(selector, line.Measurement+id)
 	}
 
 	ts := line.Ts.Unix()

@@ -42,38 +42,18 @@ and so on do *not* have to be known at startup. Every level can hold all kinds o
 metrics it does not have itself, *all* child-levels will be asked for their values for that metric and
 the data will be aggregated on a per-timestep basis.
 
-A.t.m., the *cc-metric-collector* does not provide a *socket* tag for *cpu* metrics, so currently,
-the tree structure looks like this (example selector: `["cluster1", "host1", "cpu", "0"]`):
-
-- cluster1
-  - host1
-    - socket
-      - 0
-      - 1
-    - cpu
-      - 0
-      - 1
-      - 2
-      - ...
-  - host2
-  - ...
-- cluster2
-- ...
-
-The plan is later to have the structure look like this (for this, the socket of every cpu must be kown in advance or provided as tag, example selector: `["cluster1", "host1", "socket0", "cpu0"]`):
+A.t.m., there is no way to specify which CPU belongs to which Socket, so the hierarchy within a node is flat. That
+will probably change.
 
 - cluster1
   - host1
     - socket0
-      - cpu0
-      - cpu1
-      - cpu2
-      - ...
     - socket1
-      - cpu8
-      - cpu9
-      - cpu10
-      - ...
+    - ...
+    - cpu1
+    - cpu2
+    - cpu3
+    - cpu4
     - ...
   - host2
   - ...
@@ -142,16 +122,19 @@ And finally, use the API to fetch some data:
 curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\"]], \"metrics\": [\"load_one\"] }"
 
 # Get flops_any for all CPUs:
-curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\", \"cpu\"]], \"metrics\": [\"flops_any\"] }"
+curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\"]], \"metrics\": [\"flops_any\"] }"
 
 # Get flops_any for CPU 0:
-curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\", \"cpu\", \"0\"]], \"metrics\": [\"flops_any\"] }"
+curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\", \"cpu0\"]], \"metrics\": [\"flops_any\"] }"
+
+# Get flops_any for CPU 0, 1, 2 and 3:
+curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\", [\"cpu0\", \"cpu1\", \"cpu2\", \"cpu3\"]]], \"metrics\": [\"flops_any\"] }"
 
 # Stats for load_one and proc_run:
 curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/stats" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\"]], \"metrics\": [\"load_one\", \"proc_run\"] }"
 
 # Stats for *all* CPUs aggregated both from CPU to node and over time:
-curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/stats" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\", \"cpu\"]], \"metrics\": [\"flops_sp\", \"flops_dp\"] }"
+curl -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/stats" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\"]], \"metrics\": [\"flops_sp\", \"flops_dp\"] }"
 
 
 # ...
