@@ -61,8 +61,8 @@ func (b *buffer) stats(from, to int64) (Stats, int64, int64, error) {
 // This function assmumes that `l.lock` is LOCKED!
 // It basically works just like level.read but calculates min/max/avg for that data level.read would return.
 // TODO: Make this DRY?
-func (l *level) stats(metric string, from, to int64, aggregation string) (Stats, int64, int64, error) {
-	if b, ok := l.metrics[metric]; ok {
+func (l *level) stats(offset int, from, to int64, aggreg AggregationStrategy) (Stats, int64, int64, error) {
+	if b := l.metrics[offset]; b != nil {
 		return b.stats(from, to)
 	}
 
@@ -75,7 +75,7 @@ func (l *level) stats(metric string, from, to int64, aggregation string) (Stats,
 	avg, min, max := Float(0), Float(math.MaxFloat32), Float(-math.MaxFloat32)
 	for _, child := range l.children {
 		child.lock.RLock()
-		stats, cfrom, cto, err := child.stats(metric, from, to, aggregation)
+		stats, cfrom, cto, err := child.stats(offset, from, to, aggreg)
 		child.lock.RUnlock()
 
 		if err == ErrNoData {
@@ -104,10 +104,10 @@ func (l *level) stats(metric string, from, to int64, aggregation string) (Stats,
 		return Stats{}, 0, 0, ErrNoData
 	}
 
-	if aggregation == "avg" {
+	if aggreg == AvgAggregation {
 		avg /= Float(n)
-	} else if aggregation != "sum" {
-		return Stats{}, 0, 0, errors.New("invalid aggregation strategy: " + aggregation)
+	} else if aggreg != SumAggregation {
+		return Stats{}, 0, 0, errors.New("invalid aggregation")
 	}
 
 	return Stats{
@@ -119,7 +119,7 @@ func (l *level) stats(metric string, from, to int64, aggregation string) (Stats,
 }
 
 func (m *MemoryStore) Stats(selector []string, metric string, from, to int64) (*Stats, int64, int64, error) {
-	l := m.root.findLevelOrCreate(selector)
+	l := m.root.findLevelOrCreate(selector, len(m.metrics))
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
@@ -132,6 +132,6 @@ func (m *MemoryStore) Stats(selector []string, metric string, from, to int64) (*
 		return nil, 0, 0, errors.New("unkown metric: " + metric)
 	}
 
-	stats, from, to, err := l.stats(metric, from, to, minfo.Aggregation)
+	stats, from, to, err := l.stats(minfo.offset, from, to, minfo.aggregation)
 	return &stats, from, to, err
 }

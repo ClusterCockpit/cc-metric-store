@@ -45,7 +45,7 @@ func (m *MemoryStore) ToArchive(archiveRoot string, from, to int64) (int, error)
 
 	for i := 0; i < len(levels); i++ {
 		dir := path.Join(archiveRoot, path.Join(selectors[i]...))
-		err := levels[i].toArchive(dir, from, to)
+		err := levels[i].toArchive(dir, from, to, m)
 		if err != nil {
 			return i, err
 		}
@@ -54,7 +54,7 @@ func (m *MemoryStore) ToArchive(archiveRoot string, from, to int64) (int, error)
 	return len(levels), nil
 }
 
-func (l *level) toArchiveFile(from, to int64) (*ArchiveFile, error) {
+func (l *level) toArchiveFile(from, to int64, m *MemoryStore) (*ArchiveFile, error) {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
@@ -64,7 +64,12 @@ func (l *level) toArchiveFile(from, to int64) (*ArchiveFile, error) {
 		Children: make(map[string]*ArchiveFile),
 	}
 
-	for metric, b := range l.metrics {
+	for metric, minfo := range m.metrics {
+		b := l.metrics[minfo.offset]
+		if b == nil {
+			continue
+		}
+
 		data := make([]Float, (to-from)/b.frequency+1)
 		data, start, end, err := b.read(from, to, data)
 		if err != nil {
@@ -83,7 +88,7 @@ func (l *level) toArchiveFile(from, to int64) (*ArchiveFile, error) {
 	}
 
 	for name, child := range l.children {
-		val, err := child.toArchiveFile(from, to)
+		val, err := child.toArchiveFile(from, to, m)
 		if err != nil {
 			return nil, err
 		}
@@ -94,8 +99,8 @@ func (l *level) toArchiveFile(from, to int64) (*ArchiveFile, error) {
 	return retval, nil
 }
 
-func (l *level) toArchive(dir string, from, to int64) error {
-	af, err := l.toArchiveFile(from, to)
+func (l *level) toArchive(dir string, from, to int64, m *MemoryStore) error {
+	af, err := l.toArchiveFile(from, to, m)
 	if err != nil {
 		return err
 	}
@@ -126,10 +131,10 @@ func (l *level) toArchive(dir string, from, to int64) error {
 // This function can only be called once and before the very first write or read.
 // Unlike ToArchive, this function is NOT thread-safe.
 func (m *MemoryStore) FromArchive(archiveRoot string, from int64) (int, error) {
-	return m.root.fromArchive(archiveRoot, from)
+	return m.root.fromArchive(archiveRoot, from, m)
 }
 
-func (l *level) loadFile(af *ArchiveFile) error {
+func (l *level) loadFile(af *ArchiveFile, m *MemoryStore) error {
 	for name, metric := range af.Metrics {
 		n := len(metric.Data)
 		b := &buffer{
@@ -140,9 +145,14 @@ func (l *level) loadFile(af *ArchiveFile) error {
 			next:      nil,
 		}
 
-		prev, ok := l.metrics[name]
+		minfo, ok := m.metrics[name]
 		if !ok {
-			l.metrics[name] = b
+			return errors.New("Unkown metric: " + name)
+		}
+
+		prev := l.metrics[minfo.offset]
+		if prev == nil {
+			l.metrics[minfo.offset] = b
 		} else {
 			if prev.start > b.start {
 				return errors.New("wooops")
@@ -151,20 +161,20 @@ func (l *level) loadFile(af *ArchiveFile) error {
 			b.prev = prev
 			prev.next = b
 		}
-		l.metrics[name] = b
+		l.metrics[minfo.offset] = b
 	}
 
 	for sel, childAf := range af.Children {
 		child, ok := l.children[sel]
 		if !ok {
 			child = &level{
-				metrics:  make(map[string]*buffer),
+				metrics:  make([]*buffer, len(m.metrics)),
 				children: make(map[string]*level),
 			}
 			l.children[sel] = child
 		}
 
-		err := child.loadFile(childAf)
+		err := child.loadFile(childAf, m)
 		if err != nil {
 			return err
 		}
@@ -173,7 +183,7 @@ func (l *level) loadFile(af *ArchiveFile) error {
 	return nil
 }
 
-func (l *level) fromArchive(dir string, from int64) (int, error) {
+func (l *level) fromArchive(dir string, from int64, m *MemoryStore) (int, error) {
 	direntries, err := os.ReadDir(dir)
 	if err != nil {
 		return 0, err
@@ -184,11 +194,11 @@ func (l *level) fromArchive(dir string, from int64) (int, error) {
 	for _, e := range direntries {
 		if e.IsDir() {
 			child := &level{
-				metrics:  make(map[string]*buffer),
+				metrics:  make([]*buffer, len(m.metrics)),
 				children: make(map[string]*level),
 			}
 
-			files, err := child.fromArchive(path.Join(dir, e.Name()), from)
+			files, err := child.fromArchive(path.Join(dir, e.Name()), from, m)
 			filesLoaded += files
 			if err != nil {
 				return filesLoaded, err
@@ -219,7 +229,7 @@ func (l *level) fromArchive(dir string, from int64) (int, error) {
 			return filesLoaded, err
 		}
 
-		err = l.loadFile(af)
+		err = l.loadFile(af, m)
 		if err != nil {
 			return filesLoaded, err
 		}

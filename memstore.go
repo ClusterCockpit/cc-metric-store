@@ -153,53 +153,65 @@ func (b *buffer) free(t int64) (int, error) {
 // Can be both a leaf or a inner node. In this tree structue, inner nodes can
 // also hold data (in `metrics`).
 type level struct {
-	lock     sync.RWMutex       //
-	metrics  map[string]*buffer // Every level can store metrics.
-	children map[string]*level  // Lower levels.
+	lock     sync.RWMutex
+	metrics  []*buffer         // Every level can store metrics.
+	children map[string]*level // Lower levels.
 }
 
 // Find the correct level for the given selector, creating it if
 // it does not exist. Example selector in the context of the
 // ClusterCockpit could be: []string{ "emmy", "host123", "cpu", "0" }
 // This function would probably benefit a lot from `level.children` beeing a `sync.Map`?
-func (l *level) findLevelOrCreate(selector []string) *level {
+func (l *level) findLevelOrCreate(selector []string, nMetrics int) *level {
 	if len(selector) == 0 {
 		return l
 	}
 
 	// Allow concurrent reads:
 	l.lock.RLock()
-	child, ok := l.children[selector[0]]
-	l.lock.RUnlock()
-	if ok {
-		return child.findLevelOrCreate(selector[1:])
+	var child *level
+	var ok bool
+	if l.children == nil {
+		// Children map needs to be created...
+		l.lock.RUnlock()
+	} else {
+		child, ok := l.children[selector[0]]
+		l.lock.RUnlock()
+		if ok {
+			return child.findLevelOrCreate(selector[1:], nMetrics)
+		}
 	}
 
 	// The level does not exist, take write lock for unqiue access:
 	l.lock.Lock()
 	// While this thread waited for the write lock, another thread
 	// could have created the child node.
-	child, ok = l.children[selector[0]]
-	if ok {
-		l.lock.Unlock()
-		return child.findLevelOrCreate(selector[1:])
+	if l.children != nil {
+		child, ok = l.children[selector[0]]
+		if ok {
+			l.lock.Unlock()
+			return child.findLevelOrCreate(selector[1:], nMetrics)
+		}
+	} else {
+		l.children = make(map[string]*level)
 	}
 
 	child = &level{
-		metrics:  make(map[string]*buffer),
-		children: make(map[string]*level),
+		metrics:  make([]*buffer, nMetrics),
+		children: nil,
 	}
+
 	l.children[selector[0]] = child
 	l.lock.Unlock()
-	return child.findLevelOrCreate(selector[1:])
+	return child.findLevelOrCreate(selector[1:], nMetrics)
 }
 
 // This function assmumes that `l.lock` is LOCKED!
 // Read `buffer.read` for context.
 // If this level does not have data for the requested metric, the data
 // is aggregated timestep-wise from all the children (recursively).
-func (l *level) read(metric string, from, to int64, data []Float) ([]Float, int, int64, int64, error) {
-	if b, ok := l.metrics[metric]; ok {
+func (l *level) read(offset int, from, to int64, data []Float) ([]Float, int, int64, int64, error) {
+	if b := l.metrics[offset]; b != nil {
 		// Whoo, this is the "native" level of this metric:
 		data, from, to, err := b.read(from, to, data)
 		return data, 1, from, to, err
@@ -212,7 +224,7 @@ func (l *level) read(metric string, from, to int64, data []Float) ([]Float, int,
 	n := 0
 	for _, child := range l.children {
 		child.lock.RLock()
-		cdata, cn, cfrom, cto, err := child.read(metric, from, to, data)
+		cdata, cn, cfrom, cto, err := child.read(offset, from, to, data)
 		child.lock.RUnlock()
 
 		if err == ErrNoData {
@@ -255,6 +267,10 @@ func (l *level) free(t int64) (int, error) {
 
 	n := 0
 	for _, b := range l.metrics {
+		if b == nil {
+			continue
+		}
+
 		m, err := b.free(t)
 		n += m
 		if err != nil {
@@ -273,40 +289,81 @@ func (l *level) free(t int64) (int, error) {
 	return n, nil
 }
 
+type AggregationStrategy int
+
+const (
+	NoAggregation AggregationStrategy = iota
+	SumAggregation
+	AvgAggregation
+)
+
 type MemoryStore struct {
 	root    level // root of the tree structure
-	metrics map[string]MetricConfig
+	metrics map[string]struct {
+		offset      int
+		aggregation AggregationStrategy
+		frequency   int64
+	}
 }
 
 func NewMemoryStore(metrics map[string]MetricConfig) *MemoryStore {
+	ms := make(map[string]struct {
+		offset      int
+		aggregation AggregationStrategy
+		frequency   int64
+	})
+
+	offset := 0
+	for key, config := range metrics {
+		aggregation := NoAggregation
+		if config.Aggregation == "sum" {
+			aggregation = SumAggregation
+		} else if config.Aggregation == "avg" {
+			aggregation = AvgAggregation
+		} else if config.Aggregation != "" {
+			panic("invalid aggregation strategy: " + config.Aggregation)
+		}
+
+		ms[key] = struct {
+			offset      int
+			aggregation AggregationStrategy
+			frequency   int64
+		}{
+			offset:      offset,
+			aggregation: aggregation,
+			frequency:   config.Frequency,
+		}
+
+		offset += 1
+	}
+
 	return &MemoryStore{
 		root: level{
-			metrics:  make(map[string]*buffer),
+			metrics:  make([]*buffer, len(metrics)),
 			children: make(map[string]*level),
 		},
-		metrics: metrics,
+		metrics: ms,
 	}
 }
 
 // Write all values in `metrics` to the level specified by `selector` for time `ts`.
 // Look at `findLevelOrCreate` for how selectors work.
 func (m *MemoryStore) Write(selector []string, ts int64, metrics []Metric) error {
-	l := m.root.findLevelOrCreate(selector)
+	l := m.root.findLevelOrCreate(selector, len(m.metrics))
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
 	for _, metric := range metrics {
-		b, ok := l.metrics[metric.Name]
+		minfo, ok := m.metrics[metric.Name]
 		if !ok {
-			minfo, ok := m.metrics[metric.Name]
-			if !ok {
-				// return errors.New("unkown metric: " + metric.Name)
-				continue
-			}
+			continue
+		}
 
+		b := l.metrics[minfo.offset]
+		if b == nil {
 			// First write to this metric and level
-			b = newBuffer(ts, minfo.Frequency)
-			l.metrics[metric.Name] = b
+			b = newBuffer(ts, minfo.frequency)
+			l.metrics[minfo.offset] = b
 		}
 
 		nb, err := b.write(ts, metric.Value)
@@ -316,7 +373,7 @@ func (m *MemoryStore) Write(selector []string, ts int64, metrics []Metric) error
 
 		// Last write created a new buffer...
 		if b != nb {
-			l.metrics[metric.Name] = nb
+			l.metrics[minfo.offset] = nb
 		}
 	}
 	return nil
@@ -326,7 +383,7 @@ func (m *MemoryStore) Write(selector []string, ts int64, metrics []Metric) error
 // If the level does not hold the metric itself, the data will be aggregated recursively from the children.
 // See `level.read` for more information.
 func (m *MemoryStore) Read(selector []string, metric string, from, to int64) ([]Float, int64, int64, error) {
-	l := m.root.findLevelOrCreate(selector)
+	l := m.root.findLevelOrCreate(selector, len(m.metrics))
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
@@ -339,20 +396,20 @@ func (m *MemoryStore) Read(selector []string, metric string, from, to int64) ([]
 		return nil, 0, 0, errors.New("unkown metric: " + metric)
 	}
 
-	data := make([]Float, (to-from)/minfo.Frequency)
-	data, n, from, to, err := l.read(metric, from, to, data)
+	data := make([]Float, (to-from)/minfo.frequency+1)
+	data, n, from, to, err := l.read(minfo.offset, from, to, data)
 	if err != nil {
 		return nil, 0, 0, err
 	}
 
 	if n > 1 {
-		if minfo.Aggregation == "avg" {
+		if minfo.aggregation == AvgAggregation {
 			normalize := 1. / Float(n)
 			for i := 0; i < len(data); i++ {
 				data[i] *= normalize
 			}
-		} else if minfo.Aggregation != "sum" {
-			return nil, 0, 0, errors.New("invalid aggregation strategy: " + minfo.Aggregation)
+		} else if minfo.aggregation != SumAggregation {
+			return nil, 0, 0, errors.New("invalid aggregation")
 		}
 	}
 
@@ -362,5 +419,5 @@ func (m *MemoryStore) Read(selector []string, metric string, from, to int64) ([]
 // Release all buffers for the selected level and all its children that contain only
 // values older than `t`.
 func (m *MemoryStore) Free(selector []string, t int64) (int, error) {
-	return m.root.findLevelOrCreate(selector).free(t)
+	return m.root.findLevelOrCreate(selector, len(m.metrics)).free(t)
 }
