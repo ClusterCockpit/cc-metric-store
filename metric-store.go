@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -62,7 +63,7 @@ func handleLine(line *Line) {
 	}
 
 	ts := line.Ts.Unix()
-	log.Printf("ts=%d, tags=%v\n", ts, selector)
+	// log.Printf("ts=%d, tags=%v\n", ts, selector)
 	err := memoryStore.Write(selector, ts, line.Fields)
 	if err != nil {
 		log.Printf("error: %s\n", err.Error())
@@ -87,15 +88,15 @@ func main() {
 		}
 	}
 
+	ctx, shutdown := context.WithCancel(context.Background())
+
 	var wg sync.WaitGroup
 	sigs := make(chan os.Signal, 1)
-	done := make(chan bool, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		_ = <-sigs
 		log.Println("Shuting down...")
-		done <- true
-		close(done)
+		shutdown()
 	}()
 
 	lastCheckpoint = startupTime
@@ -106,7 +107,7 @@ func main() {
 			ticks := time.Tick(d)
 			for {
 				select {
-				case <-done:
+				case <-ctx.Done():
 					wg.Done()
 					return
 				case <-ticks:
@@ -137,7 +138,7 @@ func main() {
 	}
 
 	go func() {
-		err := StartApiServer(":8080", done)
+		err := StartApiServer(":8080", ctx)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -145,7 +146,7 @@ func main() {
 	}()
 
 	go func() {
-		err := ReceiveNats(conf.Nats, handleLine, runtime.NumCPU()-1, done)
+		err := ReceiveNats(conf.Nats, handleLine, runtime.NumCPU()-1, ctx)
 		if err != nil {
 			log.Fatal(err)
 		}

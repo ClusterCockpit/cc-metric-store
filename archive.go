@@ -65,7 +65,7 @@ func (l *level) toArchiveFile(from, to int64) (*ArchiveFile, error) {
 	}
 
 	for metric, b := range l.metrics {
-		data := make([]Float, (to-from)/b.frequency)
+		data := make([]Float, (to-from)/b.frequency+1)
 		data, start, end, err := b.read(from, to, data)
 		if err != nil {
 			return nil, err

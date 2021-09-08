@@ -187,7 +187,7 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 	rw.Write([]byte(fmt.Sprintf("buffers freed: %d\n", n)))
 }
 
-func StartApiServer(address string, done chan bool) error {
+func StartApiServer(address string, ctx context.Context) error {
 	r := mux.NewRouter()
 
 	r.HandleFunc("/api/{from:[0-9]+}/{to:[0-9]+}/timeseries", handleTimeseries)
@@ -210,7 +210,7 @@ func StartApiServer(address string, done chan bool) error {
 	}()
 
 	for {
-		_ = <-done
+		_ = <-ctx.Done()
 		err := server.Shutdown(context.Background())
 		log.Println("API server shut down")
 		return err

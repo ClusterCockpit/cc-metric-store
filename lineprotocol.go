@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"io"
 	"log"
@@ -175,7 +176,7 @@ func ReceiveTCP(address string, handleLine func(line *Line), done chan bool) err
 // Connect to a nats server and subscribe to "updates". This is a blocking
 // function. handleLine will be called for each line recieved via nats.
 // Send `true` through the done channel for gracefull termination.
-func ReceiveNats(address string, handleLine func(line *Line), workers int, done chan bool) error {
+func ReceiveNats(address string, handleLine func(line *Line), workers int, ctx context.Context) error {
 	nc, err := nats.Connect(nats.DefaultURL)
 	if err != nil {
 		return err
@@ -194,6 +195,14 @@ func ReceiveNats(address string, handleLine func(line *Line), workers int, done 
 
 			handleLine(line)
 		})
+		if err != nil {
+			return err
+		}
+
+		log.Printf("NATS subscription to 'updates' on '%s' established\n", address)
+
+		_ = <-ctx.Done()
+		err = sub.Unsubscribe()
 	} else {
 		msgs := make(chan *nats.Msg, 16)
 		var wg sync.WaitGroup
@@ -210,14 +219,22 @@ func ReceiveNats(address string, handleLine func(line *Line), workers int, done 
 
 					handleLine(line)
 				}
+
+				wg.Done()
 			}()
 		}
 
 		sub, err = nc.Subscribe("updates", func(m *nats.Msg) {
 			msgs <- m
 		})
+		if err != nil {
+			return err
+		}
 
-		_ = <-done
+		log.Printf("NATS subscription to 'updates' on '%s' established\n", address)
+
+		_ = <-ctx.Done()
+		err = sub.Unsubscribe()
 		close(msgs)
 		wg.Wait()
 	}
@@ -226,12 +243,7 @@ func ReceiveNats(address string, handleLine func(line *Line), workers int, done 
 		return err
 	}
 
-	log.Printf("NATS subscription to 'updates' on '%s' established\n", address)
-	for {
-		_ = <-done
-		sub.Unsubscribe()
-		nc.Close()
-		log.Println("NATS connection closed")
-		return nil
-	}
+	nc.Close()
+	log.Println("NATS connection closed")
+	return nil
 }
