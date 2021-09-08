@@ -124,7 +124,7 @@ func main() {
 					if conf.RetentionHours > 0 {
 						log.Println("Freeing up memory...")
 						t := now.Add(-time.Duration(conf.RetentionHours) * time.Hour)
-						freed, err := memoryStore.Free([]string{}, t.Unix())
+						freed, err := memoryStore.Free(Selector{}, t.Unix())
 						if err != nil {
 							log.Printf("Freeing up memory failed: %s\n", err.Error())
 						}

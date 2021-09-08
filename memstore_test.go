@@ -27,12 +27,13 @@ func TestMemoryStoreBasics(t *testing.T) {
 		}
 	}
 
-	adata, from, to, err := store.Read([]string{"testhost"}, "a", 0, count*frequency)
+	sel := Selector{{String: "testhost"}}
+	adata, from, to, err := store.Read(sel, "a", 0, count*frequency)
 	if err != nil || from != 0 || to != count*frequency {
 		t.Error(err)
 		return
 	}
-	bdata, _, _, err := store.Read([]string{"testhost"}, "b", 0, count*frequency)
+	bdata, _, _, err := store.Read(sel, "b", 0, count*frequency)
 	if err != nil {
 		t.Error(err)
 		return
@@ -80,7 +81,8 @@ func TestMemoryStoreMissingDatapoints(t *testing.T) {
 		}
 	}
 
-	adata, _, _, err := store.Read([]string{"testhost"}, "a", 0, int64(count))
+	sel := Selector{{String: "testhost"}}
+	adata, _, _, err := store.Read(sel, "a", 0, int64(count))
 	if err != nil {
 		t.Error(err)
 		return
@@ -133,7 +135,7 @@ func TestMemoryStoreAggregation(t *testing.T) {
 		}
 	}
 
-	adata, from, to, err := store.Read([]string{"host0"}, "a", int64(0), int64(count))
+	adata, from, to, err := store.Read(Selector{{String: "host0"}}, "a", int64(0), int64(count))
 	if err != nil {
 		t.Error(err)
 		return
@@ -152,7 +154,7 @@ func TestMemoryStoreAggregation(t *testing.T) {
 		}
 	}
 
-	bdata, from, to, err := store.Read([]string{"host0"}, "b", int64(0), int64(count))
+	bdata, from, to, err := store.Read(Selector{{String: "host0"}}, "b", int64(0), int64(count))
 	if err != nil {
 		t.Error(err)
 		return
@@ -215,7 +217,7 @@ func TestMemoryStoreStats(t *testing.T) {
 		})
 	}
 
-	stats, from, to, err := store.Stats(sel1, "a", 0, int64(count))
+	stats, from, to, err := store.Stats(Selector{{String: "cluster"}, {String: "host1"}}, "a", 0, int64(count))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +230,7 @@ func TestMemoryStoreStats(t *testing.T) {
 		t.Fatalf("wrong stats: %#v\n", stats)
 	}
 
-	stats, from, to, err = store.Stats([]string{"cluster", "host2"}, "b", 0, int64(count))
+	stats, from, to, err = store.Stats(Selector{{String: "cluster"}, {String: "host2"}}, "b", 0, int64(count))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +285,8 @@ func TestMemoryStoreArchive(t *testing.T) {
 		return
 	}
 
-	adata, from, to, err := store2.Read([]string{"cluster", "host", "cpu0"}, "a", 100, int64(100+count))
+	sel := Selector{{String: "cluster"}, {String: "host"}, {String: "cpu0"}}
+	adata, from, to, err := store2.Read(sel, "a", 100, int64(100+count))
 	if err != nil {
 		t.Error(err)
 		return
@@ -320,7 +323,7 @@ func TestMemoryStoreFree(t *testing.T) {
 		}
 	}
 
-	n, err := store.Free([]string{"cluster", "host"}, int64(BUFFER_CAP*2)+100)
+	n, err := store.Free(Selector{{String: "cluster"}, {String: "host"}}, int64(BUFFER_CAP*2)+100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +332,7 @@ func TestMemoryStoreFree(t *testing.T) {
 		t.Fatal("two buffers expected to be released")
 	}
 
-	adata, from, to, err := store.Read([]string{"cluster", "host", "1"}, "a", 0, int64(count))
+	adata, from, to, err := store.Read(Selector{{String: "cluster"}, {String: "host"}, {String: "1"}}, "a", 0, int64(count))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +341,7 @@ func TestMemoryStoreFree(t *testing.T) {
 		t.Fatalf("unexpected values from call to `Read`: from=%d, to=%d, len=%d", from, to, len(adata))
 	}
 
-	bdata, from, to, err := store.Read([]string{"cluster", "host", "1"}, "b", 0, int64(count))
+	bdata, from, to, err := store.Read(Selector{{String: "cluster"}, {String: "host"}, {String: "1"}}, "b", 0, int64(count))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +383,8 @@ func BenchmarkMemoryStoreConcurrentWrites(b *testing.B) {
 
 	for g := 0; g < goroutines; g++ {
 		host := fmt.Sprintf("host%d", g)
-		adata, _, _, err := store.Read([]string{"cluster", host, "cpu0"}, "a", 0, int64(count)*frequency)
+		sel := Selector{{String: "cluster"}, {String: host}, {String: "cpu0"}}
+		adata, _, _, err := store.Read(sel, "a", 0, int64(count)*frequency)
 		if err != nil {
 			b.Error(err)
 			return
@@ -429,7 +433,7 @@ func BenchmarkMemoryStoreAggregation(b *testing.B) {
 
 	b.StartTimer()
 	for n := 0; n < b.N; n++ {
-		data, from, to, err := store.Read(sel[0:2], "flops_any", 0, int64(count))
+		data, from, to, err := store.Read(Selector{{String: "testcluster"}, {String: "host123"}}, "flops_any", 0, int64(count))
 		if err != nil {
 			b.Fatal(err)
 		}

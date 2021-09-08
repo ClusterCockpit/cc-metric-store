@@ -118,11 +118,7 @@ func (l *level) stats(offset int, from, to int64, aggreg AggregationStrategy) (S
 	}, from, to, nil
 }
 
-func (m *MemoryStore) Stats(selector []string, metric string, from, to int64) (*Stats, int64, int64, error) {
-	l := m.root.findLevelOrCreate(selector, len(m.metrics))
-	l.lock.RLock()
-	defer l.lock.RUnlock()
-
+func (m *MemoryStore) Stats(selector Selector, metric string, from, to int64) (*Stats, int64, int64, error) {
 	if from > to {
 		return nil, 0, 0, errors.New("invalid time range")
 	}
@@ -132,6 +128,46 @@ func (m *MemoryStore) Stats(selector []string, metric string, from, to int64) (*
 		return nil, 0, 0, errors.New("unkown metric: " + metric)
 	}
 
-	stats, from, to, err := l.stats(minfo.offset, from, to, minfo.aggregation)
-	return &stats, from, to, err
+	n, samples := 0, 0
+	avg, min, max := Float(0), math.MaxFloat32, -math.MaxFloat32
+	err := m.root.findBuffers(selector, minfo.offset, func(b *buffer) error {
+		stats, cfrom, cto, err := b.stats(from, to)
+		if err != nil {
+			return err
+		}
+
+		if n == 0 {
+			from, to = cfrom, cto
+		} else if from != cfrom || to != cto {
+			return ErrDataDoesNotAlign
+		}
+
+		samples += stats.Samples
+		avg += stats.Avg
+		min = math.Min(min, float64(stats.Min))
+		max = math.Max(max, float64(stats.Max))
+		n += 1
+		return nil
+	})
+
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	if n == 0 {
+		return nil, 0, 0, ErrNoData
+	}
+
+	if minfo.aggregation == AvgAggregation {
+		avg /= Float(n)
+	} else if n > 1 && minfo.aggregation != SumAggregation {
+		return nil, 0, 0, errors.New("invalid aggregation")
+	}
+
+	return &Stats{
+		Samples: samples,
+		Avg:     avg,
+		Min:     Float(min),
+		Max:     Float(max),
+	}, from, to, nil
 }

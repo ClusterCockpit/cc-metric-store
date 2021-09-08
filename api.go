@@ -19,7 +19,7 @@ import (
 //	}
 type ApiRequestBody struct {
 	Metrics   []string   `json:"metrics"`
-	Selectors [][]string `json:"selectors"`
+	Selectors []Selector `json:"selectors"`
 }
 
 type ApiMetricData struct {
@@ -165,7 +165,7 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	bodyDec := json.NewDecoder(r.Body)
-	var selectors [][]string
+	var selectors []Selector
 	err = bodyDec.Decode(&selectors)
 	if err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)

@@ -206,89 +206,6 @@ func (l *level) findLevelOrCreate(selector []string, nMetrics int) *level {
 	return child.findLevelOrCreate(selector[1:], nMetrics)
 }
 
-// This function assmumes that `l.lock` is LOCKED!
-// Read `buffer.read` for context.
-// If this level does not have data for the requested metric, the data
-// is aggregated timestep-wise from all the children (recursively).
-func (l *level) read(offset int, from, to int64, data []Float) ([]Float, int, int64, int64, error) {
-	if b := l.metrics[offset]; b != nil {
-		// Whoo, this is the "native" level of this metric:
-		data, from, to, err := b.read(from, to, data)
-		return data, 1, from, to, err
-	}
-
-	if len(l.children) == 0 {
-		return nil, 1, 0, 0, ErrNoData
-	}
-
-	n := 0
-	for _, child := range l.children {
-		child.lock.RLock()
-		cdata, cn, cfrom, cto, err := child.read(offset, from, to, data)
-		child.lock.RUnlock()
-
-		if err == ErrNoData {
-			continue
-		}
-
-		if err != nil {
-			return nil, 0, 0, 0, err
-		}
-
-		if n == 0 {
-			data = cdata
-			from = cfrom
-			to = cto
-			n += cn
-			continue
-		}
-
-		if cfrom != from || cto != to {
-			return nil, 0, 0, 0, ErrDataDoesNotAlign
-		}
-
-		if len(data) != len(cdata) {
-			panic("WTF? Different freq. at different levels?")
-		}
-
-		n += cn
-	}
-
-	if n == 0 {
-		return nil, 0, 0, 0, ErrNoData
-	}
-
-	return data, n, from, to, nil
-}
-
-func (l *level) free(t int64) (int, error) {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-
-	n := 0
-	for _, b := range l.metrics {
-		if b == nil {
-			continue
-		}
-
-		m, err := b.free(t)
-		n += m
-		if err != nil {
-			return n, err
-		}
-	}
-
-	for _, l := range l.children {
-		m, err := l.free(t)
-		n += m
-		if err != nil {
-			return n, err
-		}
-	}
-
-	return n, nil
-}
-
 type AggregationStrategy int
 
 const (
@@ -382,11 +299,7 @@ func (m *MemoryStore) Write(selector []string, ts int64, metrics []Metric) error
 // Returns all values for metric `metric` from `from` to `to` for the selected level.
 // If the level does not hold the metric itself, the data will be aggregated recursively from the children.
 // See `level.read` for more information.
-func (m *MemoryStore) Read(selector []string, metric string, from, to int64) ([]Float, int64, int64, error) {
-	l := m.root.findLevelOrCreate(selector, len(m.metrics))
-	l.lock.RLock()
-	defer l.lock.RUnlock()
-
+func (m *MemoryStore) Read(selector Selector, metric string, from, to int64) ([]Float, int64, int64, error) {
 	if from > to {
 		return nil, 0, 0, errors.New("invalid time range")
 	}
@@ -396,13 +309,29 @@ func (m *MemoryStore) Read(selector []string, metric string, from, to int64) ([]
 		return nil, 0, 0, errors.New("unkown metric: " + metric)
 	}
 
-	data := make([]Float, (to-from)/minfo.frequency+1)
-	data, n, from, to, err := l.read(minfo.offset, from, to, data)
+	n, data := 0, make([]Float, (to-from)/minfo.frequency+1)
+	err := m.root.findBuffers(selector, minfo.offset, func(b *buffer) error {
+		cdata, cfrom, cto, err := b.read(from, to, data)
+		if err != nil {
+			return err
+		}
+
+		if n == 0 {
+			from, to = cfrom, cto
+		} else if from != cfrom || to != cto || len(data) != len(cdata) {
+			return ErrDataDoesNotAlign
+		}
+
+		data = cdata
+		n += 1
+		return nil
+	})
+
 	if err != nil {
 		return nil, 0, 0, err
-	}
-
-	if n > 1 {
+	} else if n == 0 {
+		return nil, 0, 0, errors.New("metric not found")
+	} else if n > 1 {
 		if minfo.aggregation == AvgAggregation {
 			normalize := 1. / Float(n)
 			for i := 0; i < len(data); i++ {
@@ -413,11 +342,17 @@ func (m *MemoryStore) Read(selector []string, metric string, from, to int64) ([]
 		}
 	}
 
-	return data, from, to, err
+	return data, from, to, nil
 }
 
 // Release all buffers for the selected level and all its children that contain only
 // values older than `t`.
-func (m *MemoryStore) Free(selector []string, t int64) (int, error) {
-	return m.root.findLevelOrCreate(selector, len(m.metrics)).free(t)
+func (m *MemoryStore) Free(selector Selector, t int64) (int, error) {
+	n := 0
+	err := m.root.findBuffers(selector, -1, func(b *buffer) error {
+		m, err := b.free(t)
+		n += m
+		return err
+	})
+	return n, err
 }
