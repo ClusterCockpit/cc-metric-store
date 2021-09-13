@@ -192,8 +192,6 @@ func (l *level) findLevelOrCreate(selector []string, nMetrics int) *level {
 			l.lock.Unlock()
 			return child.findLevelOrCreate(selector[1:], nMetrics)
 		}
-	} else {
-		l.children = make(map[string]*level)
 	}
 
 	child = &level{
@@ -201,11 +199,16 @@ func (l *level) findLevelOrCreate(selector []string, nMetrics int) *level {
 		children: nil,
 	}
 
-	l.children[selector[0]] = child
+	if l.children != nil {
+		l.children[selector[0]] = child
+	} else {
+		l.children = map[string]*level{selector[0]: child}
+	}
 	l.lock.Unlock()
 	return child.findLevelOrCreate(selector[1:], nMetrics)
 }
 
+// For aggregation over multiple values at different cpus/sockets/..., not time!
 type AggregationStrategy int
 
 const (
@@ -223,6 +226,8 @@ type MemoryStore struct {
 	}
 }
 
+// Return a new, initialized instance of a MemoryStore.
+// Will panic if values in the metric configurations are invalid.
 func NewMemoryStore(metrics map[string]MetricConfig) *MemoryStore {
 	ms := make(map[string]struct {
 		offset      int
@@ -273,7 +278,7 @@ func (m *MemoryStore) Write(selector []string, ts int64, metrics []Metric) error
 	for _, metric := range metrics {
 		minfo, ok := m.metrics[metric.Name]
 		if !ok {
-			continue
+			return errors.New("Unknown metric: " + metric.Name)
 		}
 
 		b := l.metrics[minfo.offset]
@@ -296,9 +301,10 @@ func (m *MemoryStore) Write(selector []string, ts int64, metrics []Metric) error
 	return nil
 }
 
-// Returns all values for metric `metric` from `from` to `to` for the selected level.
+// Returns all values for metric `metric` from `from` to `to` for the selected level(s).
 // If the level does not hold the metric itself, the data will be aggregated recursively from the children.
-// See `level.read` for more information.
+// The second and third return value are the actual from/to for the data. Those can be different from
+// the range asked for if no data was available.
 func (m *MemoryStore) Read(selector Selector, metric string, from, to int64) ([]Float, int64, int64, error) {
 	if from > to {
 		return nil, 0, 0, errors.New("invalid time range")

@@ -13,9 +13,15 @@
         "clock":        { "frequency": 3, "aggregation": "avg", "scope": "cpu" },
         "cpi":          { "frequency": 3, "aggregation": "avg", "scope": "cpu" }
     },
-    "retention-hours": 20,
-    "restore-last-hours": 20,
-    "checkpoint-interval-hours": 10,
-    "archive-root": "./archive",
+    "checkpoints": {
+        "interval": 21600,
+        "directory": "./var/checkpoints",
+        "restore": 43200
+    },
+    "archive": {
+        "interval": 86400,
+        "directory": "./var/archive"
+    },
+    "retention-in-memory": 86400,
     "nats": "nats://localhost:4222"
 }

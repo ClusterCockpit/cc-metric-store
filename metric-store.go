@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -20,12 +19,18 @@ type MetricConfig struct {
 }
 
 type Config struct {
-	Metrics                 map[string]MetricConfig `json:"metrics"`
-	RetentionHours          int                     `json:"retention-hours"`
-	RestoreLastHours        int                     `json:"restore-last-hours"`
-	CheckpointIntervalHours int                     `json:"checkpoint-interval-hours"`
-	ArchiveRoot             string                  `json:"archive-root"`
-	Nats                    string                  `json:"nats"`
+	Metrics           map[string]MetricConfig `json:"metrics"`
+	RetentionInMemory int                     `json:"retention-in-memory"`
+	Nats              string                  `json:"nats"`
+	Checkpoints       struct {
+		Interval int    `json:"interval"`
+		RootDir  string `json:"directory"`
+		Restore  int    `json:"restore"`
+	} `json:"checkpoints"`
+	Archive struct {
+		Interval int    `json:"interval"`
+		RootDir  string `json:"directory"`
+	} `json:"archive"`
 }
 
 var conf Config
@@ -70,22 +75,68 @@ func handleLine(line *Line) {
 	}
 }
 
+func intervals(wg *sync.WaitGroup, ctx context.Context) {
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		d := time.Duration(conf.RetentionInMemory) * time.Second
+		ticks := time.Tick(d / 2)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticks:
+				log.Println("Freeing up memory...")
+				t := time.Now().Add(-d)
+				freed, err := memoryStore.Free(Selector{}, t.Unix())
+				if err != nil {
+					log.Printf("Freeing up memory failed: %s\n", err.Error())
+				} else {
+					log.Printf("%d buffers freed\n", freed)
+				}
+			}
+		}
+	}()
+
+	lastCheckpoint = time.Now()
+	go func() {
+		defer wg.Done()
+		d := time.Duration(conf.Checkpoints.Interval) * time.Second
+		ticks := time.Tick(d)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticks:
+				log.Printf("Checkpoint creation started...")
+				now := time.Now()
+				n, err := memoryStore.ToCheckpoint(conf.Checkpoints.RootDir,
+					lastCheckpoint.Unix(), now.Unix())
+				if err != nil {
+					log.Printf("Checkpoint creation failed: %s\n", err.Error())
+				} else {
+					log.Printf("Checkpoint finished (%d files)\n", n)
+					lastCheckpoint = now
+				}
+			}
+		}
+	}()
+
+	// TODO: Implement Archive-Stuff:
+	// Zip multiple checkpoints together, write to archive, delete from checkpoints
+}
+
 func main() {
 	startupTime := time.Now()
 	conf = loadConfiguration("config.json")
-
 	memoryStore = NewMemoryStore(conf.Metrics)
 
-	if conf.ArchiveRoot != "" && conf.RestoreLastHours > 0 {
-		d := time.Duration(conf.RestoreLastHours) * time.Hour
-		from := startupTime.Add(-d).Unix()
-		log.Printf("Restoring data since %d from '%s'...\n", from, conf.ArchiveRoot)
-		files, err := memoryStore.FromArchive(conf.ArchiveRoot, from)
-		if err != nil {
-			log.Printf("Loading archive failed: %s\n", err.Error())
-		} else {
-			log.Printf("Archive loaded (%d files)\n", files)
-		}
+	restoreFrom := startupTime.Add(-time.Duration(conf.Checkpoints.Restore))
+	files, err := memoryStore.FromCheckpoint(conf.Checkpoints.RootDir, restoreFrom.Unix())
+	if err != nil {
+		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
+	} else {
+		log.Printf("Checkpoints loaded (%d files)\n", files)
 	}
 
 	ctx, shutdown := context.WithCancel(context.Background())
@@ -99,43 +150,9 @@ func main() {
 		shutdown()
 	}()
 
-	lastCheckpoint = startupTime
-	if conf.ArchiveRoot != "" && conf.CheckpointIntervalHours > 0 {
-		wg.Add(3)
-		go func() {
-			d := time.Duration(conf.CheckpointIntervalHours) * time.Hour
-			ticks := time.Tick(d)
-			for {
-				select {
-				case <-ctx.Done():
-					wg.Done()
-					return
-				case <-ticks:
-					log.Println("Start making checkpoint...")
-					now := time.Now()
-					n, err := memoryStore.ToArchive(conf.ArchiveRoot, lastCheckpoint.Unix(), now.Unix())
-					if err != nil {
-						log.Printf("Making checkpoint failed: %s\n", err.Error())
-					} else {
-						log.Printf("Checkpoint successfull (%d files written)\n", n)
-					}
-					lastCheckpoint = now
+	intervals(&wg, ctx)
 
-					if conf.RetentionHours > 0 {
-						log.Println("Freeing up memory...")
-						t := now.Add(-time.Duration(conf.RetentionHours) * time.Hour)
-						freed, err := memoryStore.Free(Selector{}, t.Unix())
-						if err != nil {
-							log.Printf("Freeing up memory failed: %s\n", err.Error())
-						}
-						log.Printf("%d values freed\n", freed)
-					}
-				}
-			}
-		}()
-	} else {
-		wg.Add(2)
-	}
+	wg.Add(2)
 
 	go func() {
 		err := StartApiServer(":8080", ctx)
@@ -146,7 +163,9 @@ func main() {
 	}()
 
 	go func() {
-		err := ReceiveNats(conf.Nats, handleLine, runtime.NumCPU()-1, ctx)
+		// err := ReceiveNats(conf.Nats, handleLine, runtime.NumCPU()-1, ctx)
+		err := ReceiveNats(conf.Nats, handleLine, 1, ctx)
+
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -155,12 +174,10 @@ func main() {
 
 	wg.Wait()
 
-	if conf.ArchiveRoot != "" {
-		log.Printf("Writing to '%s'...\n", conf.ArchiveRoot)
-		files, err := memoryStore.ToArchive(conf.ArchiveRoot, lastCheckpoint.Unix(), time.Now().Unix())
-		if err != nil {
-			log.Printf("Writing to archive failed: %s\n", err.Error())
-		}
-		log.Printf("Done! (%d files written)\n", files)
+	log.Printf("Writing to '%s'...\n", conf.Checkpoints.RootDir)
+	files, err = memoryStore.ToCheckpoint(conf.Checkpoints.RootDir, lastCheckpoint.Unix(), time.Now().Unix())
+	if err != nil {
+		log.Printf("Writing checkpoint failed: %s\n", err.Error())
 	}
+	log.Printf("Done! (%d files written)\n", files)
 }

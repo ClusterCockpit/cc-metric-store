@@ -13,23 +13,23 @@ import (
 	"strings"
 )
 
-type ArchiveMetrics struct {
+type CheckpointMetrics struct {
 	Frequency int64   `json:"frequency"`
 	Start     int64   `json:"start"`
 	Data      []Float `json:"data"`
 }
 
-type ArchiveFile struct {
-	From     int64                      `json:"from"`
-	Metrics  map[string]*ArchiveMetrics `json:"metrics"`
-	Children map[string]*ArchiveFile    `json:"children"`
+type CheckpointFile struct {
+	From     int64                         `json:"from"`
+	Metrics  map[string]*CheckpointMetrics `json:"metrics"`
+	Children map[string]*CheckpointFile    `json:"children"`
 }
 
 // Metrics stored at the lowest 2 levels are not stored away (root and cluster)!
 // On a per-host basis a new JSON file is created. I have no idea if this will scale.
 // The good thing: Only a host at a time is locked, so this function can run
 // in parallel to writes/reads.
-func (m *MemoryStore) ToArchive(archiveRoot string, from, to int64) (int, error) {
+func (m *MemoryStore) ToCheckpoint(dir string, from, to int64) (int, error) {
 	levels := make([]*level, 0)
 	selectors := make([][]string, 0)
 	m.root.lock.RLock()
@@ -44,8 +44,8 @@ func (m *MemoryStore) ToArchive(archiveRoot string, from, to int64) (int, error)
 	m.root.lock.RUnlock()
 
 	for i := 0; i < len(levels); i++ {
-		dir := path.Join(archiveRoot, path.Join(selectors[i]...))
-		err := levels[i].toArchive(dir, from, to, m)
+		dir := path.Join(dir, path.Join(selectors[i]...))
+		err := levels[i].toCheckpoint(dir, from, to, m)
 		if err != nil {
 			return i, err
 		}
@@ -54,14 +54,14 @@ func (m *MemoryStore) ToArchive(archiveRoot string, from, to int64) (int, error)
 	return len(levels), nil
 }
 
-func (l *level) toArchiveFile(from, to int64, m *MemoryStore) (*ArchiveFile, error) {
+func (l *level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFile, error) {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
-	retval := &ArchiveFile{
+	retval := &CheckpointFile{
 		From:     from,
-		Metrics:  make(map[string]*ArchiveMetrics),
-		Children: make(map[string]*ArchiveFile),
+		Metrics:  make(map[string]*CheckpointMetrics),
+		Children: make(map[string]*CheckpointFile),
 	}
 
 	for metric, minfo := range m.metrics {
@@ -80,7 +80,7 @@ func (l *level) toArchiveFile(from, to int64, m *MemoryStore) (*ArchiveFile, err
 			data[i] = NaN
 		}
 
-		retval.Metrics[metric] = &ArchiveMetrics{
+		retval.Metrics[metric] = &CheckpointMetrics{
 			Frequency: b.frequency,
 			Start:     start,
 			Data:      data,
@@ -88,7 +88,7 @@ func (l *level) toArchiveFile(from, to int64, m *MemoryStore) (*ArchiveFile, err
 	}
 
 	for name, child := range l.children {
-		val, err := child.toArchiveFile(from, to, m)
+		val, err := child.toCheckpointFile(from, to, m)
 		if err != nil {
 			return nil, err
 		}
@@ -99,8 +99,8 @@ func (l *level) toArchiveFile(from, to int64, m *MemoryStore) (*ArchiveFile, err
 	return retval, nil
 }
 
-func (l *level) toArchive(dir string, from, to int64, m *MemoryStore) error {
-	af, err := l.toArchiveFile(from, to, m)
+func (l *level) toCheckpoint(dir string, from, to int64, m *MemoryStore) error {
+	cf, err := l.toCheckpointFile(from, to, m)
 	if err != nil {
 		return err
 	}
@@ -117,10 +117,10 @@ func (l *level) toArchive(dir string, from, to int64, m *MemoryStore) error {
 		return err
 	}
 	defer f.Close()
+
 	bw := bufio.NewWriter(f)
 
-	err = json.NewEncoder(bw).Encode(af)
-	if err != nil {
+	if err = json.NewEncoder(bw).Encode(cf); err != nil {
 		return err
 	}
 
@@ -129,13 +129,13 @@ func (l *level) toArchive(dir string, from, to int64, m *MemoryStore) error {
 
 // Metrics stored at the lowest 2 levels are not loaded (root and cluster)!
 // This function can only be called once and before the very first write or read.
-// Unlike ToArchive, this function is NOT thread-safe.
-func (m *MemoryStore) FromArchive(archiveRoot string, from int64) (int, error) {
-	return m.root.fromArchive(archiveRoot, from, m)
+// Unlike ToCheckpoint, this function is NOT thread-safe.
+func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
+	return m.root.fromCheckpoint(dir, from, m)
 }
 
-func (l *level) loadFile(af *ArchiveFile, m *MemoryStore) error {
-	for name, metric := range af.Metrics {
+func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
+	for name, metric := range cf.Metrics {
 		n := len(metric.Data)
 		b := &buffer{
 			frequency: metric.Frequency,
@@ -164,18 +164,21 @@ func (l *level) loadFile(af *ArchiveFile, m *MemoryStore) error {
 		l.metrics[minfo.offset] = b
 	}
 
-	for sel, childAf := range af.Children {
+	if len(cf.Children) > 0 && l.children == nil {
+		l.children = make(map[string]*level)
+	}
+
+	for sel, childCf := range cf.Children {
 		child, ok := l.children[sel]
 		if !ok {
 			child = &level{
 				metrics:  make([]*buffer, len(m.metrics)),
-				children: make(map[string]*level),
+				children: nil,
 			}
 			l.children[sel] = child
 		}
 
-		err := child.loadFile(childAf, m)
-		if err != nil {
+		if err := child.loadFile(childCf, m); err != nil {
 			return err
 		}
 	}
@@ -183,7 +186,7 @@ func (l *level) loadFile(af *ArchiveFile, m *MemoryStore) error {
 	return nil
 }
 
-func (l *level) fromArchive(dir string, from int64, m *MemoryStore) (int, error) {
+func (l *level) fromCheckpoint(dir string, from int64, m *MemoryStore) (int, error) {
 	direntries, err := os.ReadDir(dir)
 	if err != nil {
 		return 0, err
@@ -198,7 +201,7 @@ func (l *level) fromArchive(dir string, from int64, m *MemoryStore) (int, error)
 				children: make(map[string]*level),
 			}
 
-			files, err := child.fromArchive(path.Join(dir, e.Name()), from, m)
+			files, err := child.fromCheckpoint(path.Join(dir, e.Name()), from, m)
 			filesLoaded += files
 			if err != nil {
 				return filesLoaded, err
@@ -208,7 +211,7 @@ func (l *level) fromArchive(dir string, from int64, m *MemoryStore) (int, error)
 		} else if strings.HasSuffix(e.Name(), ".json") {
 			jsonFiles = append(jsonFiles, e)
 		} else {
-			return filesLoaded, errors.New("unexpected file in archive")
+			return filesLoaded, errors.New("unexpected file: " + dir + "/" + e.Name())
 		}
 	}
 
@@ -223,14 +226,17 @@ func (l *level) fromArchive(dir string, from int64, m *MemoryStore) (int, error)
 			return filesLoaded, err
 		}
 
-		af := &ArchiveFile{}
-		err = json.NewDecoder(bufio.NewReader(f)).Decode(af)
-		if err != nil {
+		br := bufio.NewReader(f)
+		cf := &CheckpointFile{}
+		if err = json.NewDecoder(br).Decode(cf); err != nil {
 			return filesLoaded, err
 		}
 
-		err = l.loadFile(af, m)
-		if err != nil {
+		if err = l.loadFile(cf, m); err != nil {
+			return filesLoaded, err
+		}
+
+		if err = f.Close(); err != nil {
 			return filesLoaded, err
 		}
 

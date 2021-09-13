@@ -263,13 +263,13 @@ func TestMemoryStoreArchive(t *testing.T) {
 	}
 
 	archiveRoot := t.TempDir()
-	_, err := store1.ToArchive(archiveRoot, 100, 100+int64(count/2))
+	_, err := store1.ToCheckpoint(archiveRoot, 100, 100+int64(count/2))
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	_, err = store1.ToArchive(archiveRoot, 100+int64(count/2), 100+int64(count))
+	_, err = store1.ToCheckpoint(archiveRoot, 100+int64(count/2), 100+int64(count))
 	if err != nil {
 		t.Error(err)
 		return
@@ -279,7 +279,7 @@ func TestMemoryStoreArchive(t *testing.T) {
 		"a": {Frequency: 1},
 		"b": {Frequency: 1},
 	})
-	n, err := store2.FromArchive(archiveRoot, 100)
+	n, err := store2.FromCheckpoint(archiveRoot, 100)
 	if err != nil {
 		t.Error(err)
 		return
