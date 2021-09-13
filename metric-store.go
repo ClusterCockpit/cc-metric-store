@@ -76,10 +76,13 @@ func handleLine(line *Line) {
 }
 
 func intervals(wg *sync.WaitGroup, ctx context.Context) {
-	wg.Add(2)
+	wg.Add(3)
 	go func() {
 		defer wg.Done()
 		d := time.Duration(conf.RetentionInMemory) * time.Second
+		if d <= 0 {
+			return
+		}
 		ticks := time.Tick(d / 2)
 		for {
 			select {
@@ -102,13 +105,16 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 	go func() {
 		defer wg.Done()
 		d := time.Duration(conf.Checkpoints.Interval) * time.Second
+		if d <= 0 {
+			return
+		}
 		ticks := time.Tick(d)
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticks:
-				log.Printf("Checkpoint creation started...")
+				log.Println("Checkpoint creation started...")
 				now := time.Now()
 				n, err := memoryStore.ToCheckpoint(conf.Checkpoints.RootDir,
 					lastCheckpoint.Unix(), now.Unix())
@@ -122,8 +128,29 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 		}
 	}()
 
-	// TODO: Implement Archive-Stuff:
-	// Zip multiple checkpoints together, write to archive, delete from checkpoints
+	go func() {
+		defer wg.Done()
+		d := time.Duration(conf.Archive.Interval) * time.Second
+		if d <= 0 {
+			return
+		}
+		ticks := time.Tick(d)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticks:
+				log.Println("Start zipping and deleting old checkpoints...")
+				t := time.Now().Add(-d)
+				err := ArchiveCheckpoints(conf.Checkpoints.RootDir, conf.Archive.RootDir, t.Unix())
+				if err != nil {
+					log.Printf("Archiving failed: %s\n", err.Error())
+				} else {
+					log.Println("Archiving checkpoints completed!")
+				}
+			}
+		}
+	}()
 }
 
 func main() {
