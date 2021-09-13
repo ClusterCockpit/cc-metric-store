@@ -67,7 +67,7 @@ func (l *level) findBuffers(selector Selector, offset int, f func(b *buffer) err
 	}
 
 	sel := selector[0]
-	if len(sel.String) != 0 {
+	if len(sel.String) != 0 && l.children != nil {
 		lvl, ok := l.children[sel.String]
 		if ok {
 			err := lvl.findBuffers(selector[1:], offset, f)
@@ -78,7 +78,7 @@ func (l *level) findBuffers(selector Selector, offset int, f func(b *buffer) err
 		return nil
 	}
 
-	if sel.Group != nil {
+	if sel.Group != nil && l.children != nil {
 		for _, key := range sel.Group {
 			lvl, ok := l.children[key]
 			if ok {

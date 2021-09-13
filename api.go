@@ -187,12 +187,29 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 	rw.Write([]byte(fmt.Sprintf("buffers freed: %d\n", n)))
 }
 
+func handlePeek(rw http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	cluster := vars["cluster"]
+	res, err := memoryStore.Peek(cluster)
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	rw.Header().Set("Content-Type", "application/json")
+	err = json.NewEncoder(rw).Encode(res)
+	if err != nil {
+		log.Println(err.Error())
+	}
+}
+
 func StartApiServer(address string, ctx context.Context) error {
 	r := mux.NewRouter()
 
 	r.HandleFunc("/api/{from:[0-9]+}/{to:[0-9]+}/timeseries", handleTimeseries)
 	r.HandleFunc("/api/{from:[0-9]+}/{to:[0-9]+}/stats", handleStats)
 	r.HandleFunc("/api/{to:[0-9]+}/free", handleFree)
+	r.HandleFunc("/api/{cluster}/peek", handlePeek)
 
 	server := &http.Server{
 		Handler:      r,
