@@ -43,7 +43,7 @@ var expectedFields = []Metric{
 var expectedTimestamp int64 = 1629356936
 
 func TestParseLine(t *testing.T) {
-	line, err := Parse(raw)
+	line, err := ParseLine(raw)
 	if err != nil {
 		t.Error(err)
 	}
@@ -80,7 +80,7 @@ func BenchmarkParseLine(b *testing.B) {
 		}
 
 		line := scanner.Text()
-		_, err := Parse(line)
+		_, err := ParseLine(line)
 		if err != nil {
 			b.Error(err)
 			return
