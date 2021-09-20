@@ -2,11 +2,35 @@
 
 [![Build & Test](https://github.com/ClusterCockpit/cc-metric-store/actions/workflows/test.yml/badge.svg)](https://github.com/ClusterCockpit/cc-metric-store/actions/workflows/test.yml)
 
-Barely unusable yet. Go look at the [GitHub Issues](https://github.com/ClusterCockpit/cc-metric-store/issues) for a progress overview.
+Go look at the `TODO.md` file and the [GitHub Issues](https://github.com/ClusterCockpit/cc-metric-store/issues) for a progress overview. Things work, but are not properly tested.
+The [NATS.io](https://nats.io/) based writing endpoint consumes messages in [this format of the InfluxDB line protocol](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol.md), but will change to another format in the future.
 
 ### REST API Endpoints
 
-_TODO... (For now, look at the examples below)_
+In case `jwt-public-key` is a non-empty string in the `config.json` file, the API is protected by JWT based authentication. The signing algorithm has to be `Ed25519`, but no
+fields are required in the JWT payload. Expiration will be checked if specified. The JWT has to be provided using the HTTP `Authorization` header.
+
+All but one endpoints use *selectors* to access the data. A selector must be an array of strings or another array of strings. Examples are provided below.
+
+In the requests, `to` and `from` have to be UNIX timestamps in seconds. The response might also contain `from`/`to` timestamps. They can differ from those in the request,
+if there was not data for a section of the requested data.
+
+1. `POST /api/<from>/<to>/timeseries`
+    - Request-Body: `{ "selectors": [<sel1>, <sel2>, <sel3>, ...], "metrics": ["flops_any", "load_one", ...] }`
+    - The response will be a JSON array, each entry in the array corresponding to the selector found at that index in the request's `selectors` array
+    - Each array entry will be a map from every requested metric to this: `{ "from": Timestamp, "to": Timestamp, "data": Array of Floats }`
+    - Some values in `data` might be `null` if there is no data available for that time slot
+2. `POST /api/<from>/<to>/stats`
+    - The Request-Body shall be the same as for a `timeseries` query
+    - The response will be a JSON array, each entry in the array corresponding to the selector found at that index in the request's `selectors` array
+    - Each array entry will be a map from every requested metric to this: `{ "from": Timestamp, "to": Timestamp, "samples": Int, "avg": Float, "min": Float, "max": Float }`
+    - If the `samples` value is 0, the statistics should be ignored.
+3. `POST /api/<to>/free`
+    - Request-Body: Array of selectors
+    - This request will free up and release all data older than `to` for all nodes specified by the selectors
+4. `GET /api/{cluster}/peek`
+    - Return a map from every node in the specified cluster to a map from every metric to the newest value available for that metric
+    - All cpu/socket level metrics are aggregated to the node level
 
 ### Run tests
 
@@ -33,17 +57,10 @@ This project also works as a time-series database and uses the InfluxDB line pro
 Unlike InfluxDB, the data is indexed by one single strictly hierarchical tree structure.
 A selector is build out of the tags in the InfluxDB line protocol, and can be used to select
 a node (not in the sense of a compute node, can also be a socket, cpu, ...) in that tree.
-The implementation calls those nodes `level` to avoid confusion. It is impossible to access data
-only by knowing the *socket* or *cpu* tag, all higher up levels have to be specified as well.
+The implementation calls those nodes `level` to avoid confusion.
+It is impossible to access data only by knowing the *socket* or *cpu* tag, all higher up levels have to be specified as well.
 
-Metrics have to be specified in advance! Those are taken from the *fields* of a line-protocol message.
-New levels will be created on the fly at any depth, meaning that the clusters, hosts, sockets, number of cpus,
-and so on do *not* have to be known at startup. Every level can hold all kinds of metrics. If a level is asked for
-metrics it does not have itself, *all* child-levels will be asked for their values for that metric and
-the data will be aggregated on a per-timestep basis.
-
-A.t.m., there is no way to specify which CPU belongs to which Socket, so the hierarchy within a node is flat. That
-will probably change.
+This is what the hierarchy currently looks like:
 
 - cluster1
   - host1
@@ -59,6 +76,11 @@ will probably change.
   - ...
 - cluster2
 - ...
+
+Example selectors:
+1. `["cluster1", "host1", "cpu0"]`: Select only the cpu0 of host1 in cluster1
+2. `["cluster1", "host1", ["cpu4", "cpu5", "cpu6", "cpu7"]]`: Select only CPUs 4-7 of host1 in cluster1
+3. `["cluster1", "host1"]`: Select the complete node. If querying for a CPU-specific metric such as floats, all CPUs are implied
 
 ### Config file
 
