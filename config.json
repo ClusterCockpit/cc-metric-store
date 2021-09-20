@@ -23,5 +23,6 @@
         "directory": "./var/archive"
     },
     "retention-in-memory": 86400,
-    "nats": "nats://localhost:4222"
+    "nats": "nats://localhost:4222",
+    "jwt-public-key": "kzfYrYy+TzpanWZHJ5qSdMj5uKUWgq74BWhQG6copP0="
 }

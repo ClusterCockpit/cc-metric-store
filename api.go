@@ -2,13 +2,18 @@ package main
 
 import (
 	"context"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/mux"
 )
 
@@ -203,6 +208,35 @@ func handlePeek(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler {
+	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		authheader := r.Header.Get("Authorization")
+		if authheader == "" || !strings.HasPrefix(authheader, "Bearer ") {
+			http.Error(rw, "Use JWT Authentication", http.StatusUnauthorized)
+			return
+		}
+
+		// The actual token is ignored for now.
+		// In case expiration and so on are specified, the Parse function
+		// already returns an error for expired tokens.
+		_, err := jwt.Parse(authheader[len("Bearer "):], func(t *jwt.Token) (interface{}, error) {
+			if t.Method != jwt.SigningMethodEdDSA {
+				return nil, errors.New("only Ed25519/EdDSA supported")
+			}
+
+			return publicKey, nil
+		})
+
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusUnauthorized)
+			return
+		}
+
+		// Let request through...
+		next.ServeHTTP(rw, r)
+	})
+}
+
 func StartApiServer(address string, ctx context.Context) error {
 	r := mux.NewRouter()
 
@@ -218,6 +252,15 @@ func StartApiServer(address string, ctx context.Context) error {
 		ReadTimeout:  15 * time.Second,
 	}
 
+	if len(conf.JwtPublicKey) > 0 {
+		buf, err := base64.StdEncoding.DecodeString(conf.JwtPublicKey)
+		if err != nil {
+			return err
+		}
+		publicKey := ed25519.PublicKey(buf)
+		server.Handler = authentication(server.Handler, publicKey)
+	}
+
 	go func() {
 		log.Printf("API http endpoint listening on '%s'\n", address)
 		err := server.ListenAndServe()
@@ -227,7 +270,7 @@ func StartApiServer(address string, ctx context.Context) error {
 	}()
 
 	for {
-		_ = <-ctx.Done()
+		<-ctx.Done()
 		err := server.Shutdown(context.Background())
 		log.Println("API server shut down")
 		return err

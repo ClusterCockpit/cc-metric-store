@@ -22,6 +22,7 @@ type Config struct {
 	Metrics           map[string]MetricConfig `json:"metrics"`
 	RetentionInMemory int                     `json:"retention-in-memory"`
 	Nats              string                  `json:"nats"`
+	JwtPublicKey      string                  `json:"jwt-public-key"`
 	Checkpoints       struct {
 		Interval int    `json:"interval"`
 		RootDir  string `json:"directory"`
@@ -40,10 +41,10 @@ var lastCheckpoint time.Time
 func loadConfiguration(file string) Config {
 	var config Config
 	configFile, err := os.Open(file)
-	defer configFile.Close()
 	if err != nil {
 		fmt.Println(err.Error())
 	}
+	defer configFile.Close()
 	jsonParser := json.NewDecoder(configFile)
 	jsonParser.Decode(&config)
 	return config
@@ -172,7 +173,7 @@ func main() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		_ = <-sigs
+		<-sigs
 		log.Println("Shuting down...")
 		shutdown()
 	}()
