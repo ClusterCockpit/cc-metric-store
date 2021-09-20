@@ -61,6 +61,39 @@ func TestMemoryStoreBasics(t *testing.T) {
 
 }
 
+func TestMemoryStoreOutOfBounds(t *testing.T) {
+	count := 2000
+	toffset := 1000
+	store := NewMemoryStore(map[string]MetricConfig{
+		"a": {Frequency: 60},
+	})
+
+	for i := 0; i < count; i++ {
+		if err := store.Write([]string{"cluster", "host", "cpu"}, int64(toffset+i*60), []Metric{
+			{Name: "a", Value: Float(i)},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// store.DebugDump(bufio.NewWriter(os.Stdout))
+
+	sel := Selector{{String: "cluster"}, {String: "host"}, {String: "cpu"}}
+	data, from, to, err := store.Read(sel, "a", 500, int64(toffset+count*60+500))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if from != int64(toffset) || to != int64(toffset+count*60) {
+		t.Fatalf("Got %d-%d, expected %d-%d", from, to, toffset, toffset+count*60)
+	}
+
+	if len(data) != count || data[0] != 0 || data[len(data)-1] != Float((count-1)) {
+		t.Fatalf("Wrong data (got: %d, %f, %f, expected: %d, %f, %f)",
+			len(data), data[0], data[len(data)-1], count, 0., Float(count-1))
+	}
+}
+
 func TestMemoryStoreMissingDatapoints(t *testing.T) {
 	count := 3000
 	store := NewMemoryStore(map[string]MetricConfig{
@@ -88,12 +121,12 @@ func TestMemoryStoreMissingDatapoints(t *testing.T) {
 		return
 	}
 
-	if len(adata) != count {
+	if len(adata) != count-2 {
 		t.Error("unexpected len")
 		return
 	}
 
-	for i := 0; i < count; i++ {
+	for i := 0; i < count-2; i++ {
 		if i%3 == 0 {
 			if adata[i] != Float(i) {
 				t.Error("unexpected value")

@@ -218,7 +218,7 @@ func ReceiveNats(address string, handleLine func(line *Line), workers int, ctx c
 
 		log.Printf("NATS subscription to 'updates' on '%s' established\n", address)
 
-		_ = <-ctx.Done()
+		<-ctx.Done()
 		err = sub.Unsubscribe()
 	} else {
 		msgs := make(chan *nats.Msg, 16)
@@ -251,7 +251,7 @@ func ReceiveNats(address string, handleLine func(line *Line), workers int, ctx c
 
 		log.Printf("NATS subscription to 'updates' on '%s' established\n", address)
 
-		_ = <-ctx.Done()
+		<-ctx.Done()
 		err = sub.Unsubscribe()
 		close(msgs)
 		wg.Wait()

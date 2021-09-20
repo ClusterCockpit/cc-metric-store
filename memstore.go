@@ -107,7 +107,12 @@ func (b *buffer) read(from, to int64, data []Float) ([]Float, int64, int64, erro
 			idx = 0
 		}
 
-		if t < b.start || idx >= len(b.data) {
+		if idx >= len(b.data) {
+			if b.next == nil || to <= b.next.start {
+				break
+			}
+			data[i] += NaN
+		} else if t < b.start {
 			data[i] += NaN
 		} else {
 			data[i] += b.data[idx]
