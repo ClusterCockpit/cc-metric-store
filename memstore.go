@@ -283,7 +283,8 @@ func (m *MemoryStore) Write(selector []string, ts int64, metrics []Metric) error
 	for _, metric := range metrics {
 		minfo, ok := m.metrics[metric.Name]
 		if !ok {
-			return errors.New("Unknown metric: " + metric.Name)
+			// return errors.New("Unknown metric: " + metric.Name)
+			continue
 		}
 
 		b := l.metrics[minfo.offset]
