@@ -52,18 +52,18 @@ func loadConfiguration(file string) Config {
 	return config
 }
 
-func handleLine(dec *lineprotocol.Decoder) {
+func handleLine(dec *lineprotocol.Decoder) error {
 	for dec.Next() {
 		measurement, err := dec.Measurement()
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 
 		var cluster, host, typeName, typeId string
 		for {
 			key, val, err := dec.NextTag()
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 			if key == nil {
 				break
@@ -79,7 +79,7 @@ func handleLine(dec *lineprotocol.Decoder) {
 			case "type-id":
 				typeId = string(val)
 			default:
-				log.Fatalf("Unkown tag: '%s' (value: '%s')", string(key), string(val))
+				return fmt.Errorf("unkown tag: '%s' (value: '%s')", string(key), string(val))
 			}
 		}
 
@@ -94,7 +94,7 @@ func handleLine(dec *lineprotocol.Decoder) {
 		for {
 			key, val, err := dec.NextField()
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
 
 			if key == nil {
@@ -102,7 +102,7 @@ func handleLine(dec *lineprotocol.Decoder) {
 			}
 
 			if string(key) != "value" {
-				log.Fatalf("Unkown field: '%s' (value: %#v)", string(key), val)
+				return fmt.Errorf("unkown field: '%s' (value: %#v)", string(key), val)
 			}
 
 			if val.Kind() == lineprotocol.Float {
@@ -110,21 +110,22 @@ func handleLine(dec *lineprotocol.Decoder) {
 			} else if val.Kind() == lineprotocol.Int {
 				value = Float(val.IntV())
 			} else {
-				log.Fatalf("Unsupported value type in message: %s", val.Kind().String())
+				return fmt.Errorf("unsupported value type in message: %s", val.Kind().String())
 			}
 		}
 
 		t, err := dec.Time(lineprotocol.Second, time.Now())
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 
 		if err := memoryStore.Write(selector, t.Unix(), []Metric{
 			{Name: string(measurement), Value: value},
 		}); err != nil {
-			log.Fatal(err)
+			return err
 		}
 	}
+	return nil
 }
 
 func intervals(wg *sync.WaitGroup, ctx context.Context) {

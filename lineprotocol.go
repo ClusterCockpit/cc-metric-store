@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"log"
 	"math"
-	"net"
 	"strconv"
 	"sync"
 
@@ -53,48 +51,10 @@ type Metric struct {
 	Value Float
 }
 
-// Listen for connections sending metric data in the line protocol format.
-//
-// This is a blocking function, send `true` through the channel argument to shut down the server.
-// `handleLine` will be called from different go routines for different connections.
-//
-func ReceiveTCP(address string, handleLine func(dec *lineprotocol.Decoder), done chan bool) error {
-	ln, err := net.Listen("tcp", address)
-	if err != nil {
-		return err
-	}
-
-	go func() {
-		for {
-			stop := <-done
-			if stop {
-				err := ln.Close()
-				if err != nil {
-					log.Printf("closing listener failed: %s\n", err.Error())
-				}
-				return
-			}
-		}
-	}()
-
-	for {
-		conn, err := ln.Accept()
-		if err != nil {
-			return err
-		}
-
-		go func() {
-			reader := bufio.NewReader(conn)
-			dec := lineprotocol.NewDecoder(reader)
-			handleLine(dec)
-		}()
-	}
-}
-
 // Connect to a nats server and subscribe to "updates". This is a blocking
 // function. handleLine will be called for each line recieved via nats.
 // Send `true` through the done channel for gracefull termination.
-func ReceiveNats(address string, handleLine func(dec *lineprotocol.Decoder), workers int, ctx context.Context) error {
+func ReceiveNats(address string, handleLine func(dec *lineprotocol.Decoder) error, workers int, ctx context.Context) error {
 	nc, err := nats.Connect(nats.DefaultURL)
 	if err != nil {
 		return err
@@ -113,7 +73,9 @@ func ReceiveNats(address string, handleLine func(dec *lineprotocol.Decoder), wor
 			go func() {
 				for m := range msgs {
 					dec := lineprotocol.NewDecoderWithBytes(m.Data)
-					handleLine(dec)
+					if err := handleLine(dec); err != nil {
+						log.Printf("error: %s\n", err.Error())
+					}
 				}
 
 				wg.Done()
@@ -126,7 +88,9 @@ func ReceiveNats(address string, handleLine func(dec *lineprotocol.Decoder), wor
 	} else {
 		sub, err = nc.Subscribe("updates", func(m *nats.Msg) {
 			dec := lineprotocol.NewDecoderWithBytes(m.Data)
-			handleLine(dec)
+			if err := handleLine(dec); err != nil {
+				log.Printf("error: %s\n", err.Error())
+			}
 		})
 	}
 
