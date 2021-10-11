@@ -210,7 +210,7 @@ func main() {
 	conf = loadConfiguration("config.json")
 	memoryStore = NewMemoryStore(conf.Metrics)
 
-	restoreFrom := startupTime.Add(-time.Duration(conf.Checkpoints.Restore))
+	restoreFrom := startupTime.Add(-time.Duration(conf.Checkpoints.Restore) * time.Second)
 	files, err := memoryStore.FromCheckpoint(conf.Checkpoints.RootDir, restoreFrom.Unix())
 	if err != nil {
 		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
