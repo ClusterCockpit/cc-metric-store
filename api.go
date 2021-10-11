@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/ed25519"
 	"encoding/base64"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/mux"
+	"github.com/influxdata/line-protocol/v2/lineprotocol"
 )
 
 // Example:
@@ -208,6 +210,22 @@ func handlePeek(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func handleWrite(rw http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(rw, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	reader := bufio.NewReader(r.Body)
+	dec := lineprotocol.NewDecoder(reader)
+	// Unlike the name suggests, handleLine can handle multiple lines
+	if err := handleLine(dec); err != nil {
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+		return
+	}
+	rw.WriteHeader(http.StatusOK)
+}
+
 func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		authheader := r.Header.Get("Authorization")
@@ -244,6 +262,7 @@ func StartApiServer(address string, ctx context.Context) error {
 	r.HandleFunc("/api/{from:[0-9]+}/{to:[0-9]+}/stats", handleStats)
 	r.HandleFunc("/api/{to:[0-9]+}/free", handleFree)
 	r.HandleFunc("/api/{cluster}/peek", handlePeek)
+	r.HandleFunc("/api/write", handleWrite)
 
 	server := &http.Server{
 		Handler:      r,

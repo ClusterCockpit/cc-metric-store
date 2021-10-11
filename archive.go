@@ -192,6 +192,10 @@ func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 func (l *level) fromCheckpoint(dir string, from int64, m *MemoryStore) (int, error) {
 	direntries, err := os.ReadDir(dir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+
 		return 0, err
 	}
 

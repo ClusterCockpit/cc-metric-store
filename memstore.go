@@ -16,7 +16,9 @@ const (
 // So that we can reuse allocations
 var bufferPool sync.Pool = sync.Pool{
 	New: func() interface{} {
-		return make([]Float, 0, BUFFER_CAP)
+		return &buffer{
+			data: make([]Float, 0, BUFFER_CAP),
+		}
 	},
 }
 
@@ -37,13 +39,12 @@ type buffer struct {
 }
 
 func newBuffer(ts, freq int64) *buffer {
-	return &buffer{
-		frequency: freq,
-		start:     ts,
-		data:      bufferPool.Get().([]Float)[:0],
-		prev:      nil,
-		next:      nil,
-	}
+	b := bufferPool.Get().(*buffer)
+	b.frequency = freq
+	b.start = ts
+	b.prev = nil
+	b.next = nil
+	return b
 }
 
 // If a new buffer was created, the new head is returnd.
@@ -137,10 +138,11 @@ func (b *buffer) free(t int64) (int, error) {
 			}
 
 			n += 1
-			bufferPool.Put(b.data)
-			b.data = nil
+			b.frequency = 0
+			b.start = 0
 			b.next = nil
 			b.prev = nil
+			bufferPool.Put(b)
 			b = prev
 		}
 		return n, nil
@@ -283,7 +285,8 @@ func (m *MemoryStore) Write(selector []string, ts int64, metrics []Metric) error
 	for _, metric := range metrics {
 		minfo, ok := m.metrics[metric.Name]
 		if !ok {
-			return errors.New("Unknown metric: " + metric.Name)
+			// return errors.New("Unknown metric: " + metric.Name)
+			continue
 		}
 
 		b := l.metrics[minfo.offset]

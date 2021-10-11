@@ -10,6 +10,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/influxdata/line-protocol/v2/lineprotocol"
 )
 
 type MetricConfig struct {
@@ -50,30 +52,80 @@ func loadConfiguration(file string) Config {
 	return config
 }
 
-func handleLine(line *Line) {
-	cluster, ok := line.Tags["cluster"]
-	if !ok {
-		log.Println("'cluster' tag missing")
-		return
-	}
+func handleLine(dec *lineprotocol.Decoder) error {
+	for dec.Next() {
+		measurement, err := dec.Measurement()
+		if err != nil {
+			return err
+		}
 
-	host, ok := line.Tags["host"]
-	if !ok {
-		log.Println("'host' tag missing")
-		return
-	}
+		var cluster, host, typeName, typeId string
+		for {
+			key, val, err := dec.NextTag()
+			if err != nil {
+				return err
+			}
+			if key == nil {
+				break
+			}
 
-	selector := []string{cluster, host}
-	if id, ok := line.Tags[line.Measurement]; ok {
-		selector = append(selector, line.Measurement+id)
-	}
+			switch string(key) {
+			case "cluster":
+				cluster = string(val)
+			case "hostname":
+				host = string(val)
+			case "type":
+				typeName = string(val)
+			case "type-id":
+				typeId = string(val)
+			default:
+				return fmt.Errorf("unkown tag: '%s' (value: '%s')", string(key), string(val))
+			}
+		}
 
-	ts := line.Ts.Unix()
-	// log.Printf("ts=%d, tags=%v\n", ts, selector)
-	err := memoryStore.Write(selector, ts, line.Fields)
-	if err != nil {
-		log.Printf("error: %s\n", err.Error())
+		selector := make([]string, 0, 3)
+		selector = append(selector, cluster)
+		selector = append(selector, host)
+		if len(typeId) > 0 {
+			selector = append(selector, typeName+typeId)
+		}
+
+		var value Float
+		for {
+			key, val, err := dec.NextField()
+			if err != nil {
+				return err
+			}
+
+			if key == nil {
+				break
+			}
+
+			if string(key) != "value" {
+				return fmt.Errorf("unkown field: '%s' (value: %#v)", string(key), val)
+			}
+
+			if val.Kind() == lineprotocol.Float {
+				value = Float(val.FloatV())
+			} else if val.Kind() == lineprotocol.Int {
+				value = Float(val.IntV())
+			} else {
+				return fmt.Errorf("unsupported value type in message: %s", val.Kind().String())
+			}
+		}
+
+		t, err := dec.Time(lineprotocol.Second, time.Now())
+		if err != nil {
+			return err
+		}
+
+		if err := memoryStore.Write(selector, t.Unix(), []Metric{
+			{Name: string(measurement), Value: value},
+		}); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
 func intervals(wg *sync.WaitGroup, ctx context.Context) {
@@ -159,7 +211,7 @@ func main() {
 	conf = loadConfiguration("config.json")
 	memoryStore = NewMemoryStore(conf.Metrics)
 
-	restoreFrom := startupTime.Add(-time.Duration(conf.Checkpoints.Restore))
+	restoreFrom := startupTime.Add(-time.Duration(conf.Checkpoints.Restore) * time.Second)
 	files, err := memoryStore.FromCheckpoint(conf.Checkpoints.RootDir, restoreFrom.Unix())
 	if err != nil {
 		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
