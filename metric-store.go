@@ -72,7 +72,7 @@ func handleLine(dec *lineprotocol.Decoder) {
 			switch string(key) {
 			case "cluster":
 				cluster = string(val)
-			case "host":
+			case "hostname":
 				host = string(val)
 			case "type":
 				typeName = string(val)

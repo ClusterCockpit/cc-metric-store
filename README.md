@@ -84,6 +84,8 @@ Example selectors:
 
 ### Config file
 
+All durations are specified in seconds.
+
 - `metrics`: Map of metric-name to objects with the following properties
     - `frequency`: Timestep/Interval/Resolution of this metric (In seconds)
     - `aggregation`: Can be `"sum"`, `"avg"` or `null`
@@ -92,9 +94,7 @@ Example selectors:
         - `"avg"` means that values from the child levels are averaged for the parent level
     - `scope`: Unused at the moment, should be something like `"node"`, `"socket"` or `"cpu"`
 - `nats`: Url of NATS.io server (The `updates` channel will be subscribed for metrics)
-- `archive-root`: Directory to be used as archive
-- `restore-last-hours`: After restart, load data from the past *X* hours back to memory
-- `checkpoint-interval-hours`: Every *X* hours, write currently held data to disk
+- `jwt-public-key`: Base64 encoded string, use this to verify requests to the HTTP API
 
 ### Test the complete setup (excluding ClusterCockpit itself)
 

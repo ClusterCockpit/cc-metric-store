@@ -16,4 +16,4 @@
 # vendor/
 
 # Project specific ignores
-/archive
+/var
