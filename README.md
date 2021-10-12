@@ -3,7 +3,7 @@
 [![Build & Test](https://github.com/ClusterCockpit/cc-metric-store/actions/workflows/test.yml/badge.svg)](https://github.com/ClusterCockpit/cc-metric-store/actions/workflows/test.yml)
 
 Go look at the `TODO.md` file and the [GitHub Issues](https://github.com/ClusterCockpit/cc-metric-store/issues) for a progress overview. Things work, but are not properly tested.
-The [NATS.io](https://nats.io/) based writing endpoint consumes messages in [this format of the InfluxDB line protocol](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol.md), but will change to another format in the future.
+The [NATS.io](https://nats.io/) based writing endpoint consumes messages in [this format of the InfluxDB line protocol](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md).
 
 ### REST API Endpoints
 
@@ -31,6 +31,8 @@ if there was not data for a section of the requested data.
 4. `GET /api/{cluster}/peek`
     - Return a map from every node in the specified cluster to a map from every metric to the newest value available for that metric
     - All cpu/socket level metrics are aggregated to the node level
+5. `POST /api/write`
+    - You can send lines of the InfluxDB line protocol to this endpoint and they will be written to the store (Basically an alternative to NATS)
 
 ### Run tests
 
@@ -93,8 +95,10 @@ All durations are specified in seconds.
         - `"sum"` means that values from the child levels are summed up for the parent level
         - `"avg"` means that values from the child levels are averaged for the parent level
     - `scope`: Unused at the moment, should be something like `"node"`, `"socket"` or `"cpu"`
-- `nats`: Url of NATS.io server (The `updates` channel will be subscribed for metrics)
+- `nats`: Url of NATS.io server (The `updates` channel will be subscribed for metrics), example: "nats://localhost:4222"
+- `http-api-address`: Where to listen via HTTP, example: ":8080"
 - `jwt-public-key`: Base64 encoded string, use this to verify requests to the HTTP API
+- `retention-on-memory`: Keep all values in memory for at least that amount of seconds
 
 ### Test the complete setup (excluding ClusterCockpit itself)
 

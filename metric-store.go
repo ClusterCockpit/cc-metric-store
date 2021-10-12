@@ -25,6 +25,7 @@ type Config struct {
 	RetentionInMemory int                     `json:"retention-in-memory"`
 	Nats              string                  `json:"nats"`
 	JwtPublicKey      string                  `json:"jwt-public-key"`
+	HttpApiAddress    string                  `json:"http-api-address"`
 	Checkpoints       struct {
 		Interval int    `json:"interval"`
 		RootDir  string `json:"directory"`
@@ -232,25 +233,29 @@ func main() {
 
 	intervals(&wg, ctx)
 
-	wg.Add(2)
+	wg.Add(1)
 
 	go func() {
-		err := StartApiServer(":8080", ctx)
+		err := StartApiServer(conf.HttpApiAddress, ctx)
 		if err != nil {
 			log.Fatal(err)
 		}
 		wg.Done()
 	}()
 
-	go func() {
-		// err := ReceiveNats(conf.Nats, handleLine, runtime.NumCPU()-1, ctx)
-		err := ReceiveNats(conf.Nats, handleLine, 1, ctx)
+	if len(conf.Nats) != 0 {
+		wg.Add(1)
 
-		if err != nil {
-			log.Fatal(err)
-		}
-		wg.Done()
-	}()
+		go func() {
+			// err := ReceiveNats(conf.Nats, handleLine, runtime.NumCPU()-1, ctx)
+			err := ReceiveNats(conf.Nats, handleLine, 1, ctx)
+
+			if err != nil {
+				log.Fatal(err)
+			}
+			wg.Done()
+		}()
+	}
 
 	wg.Wait()
 
