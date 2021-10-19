@@ -1,17 +1,19 @@
 {
     "metrics": {
-        "load_one":     { "frequency": 3, "aggregation": null,  "scope": "node" },
-        "load_five":    { "frequency": 3, "aggregation": null,  "scope": "node" },
-        "load_fifteen": { "frequency": 3, "aggregation": null,  "scope": "node" },
-        "proc_run":     { "frequency": 3, "aggregation": null,  "scope": "node" },
-        "proc_total":   { "frequency": 3, "aggregation": null,  "scope": "node" },
-        "power":        { "frequency": 3, "aggregation": "sum", "scope": "socket" },
-        "mem_bw":       { "frequency": 3, "aggregation": "sum", "scope": "socket" },
-        "flops_sp":     { "frequency": 3, "aggregation": "sum", "scope": "cpu" },
-        "flops_dp":     { "frequency": 3, "aggregation": "sum", "scope": "cpu" },
-        "flops_any":    { "frequency": 3, "aggregation": "sum", "scope": "cpu" },
-        "clock":        { "frequency": 3, "aggregation": "avg", "scope": "cpu" },
-        "cpi":          { "frequency": 3, "aggregation": "avg", "scope": "cpu" }
+        "load_one":     { "frequency": 10, "aggregation": null,  "scope": "node" },
+        "load_five":    { "frequency": 10, "aggregation": null,  "scope": "node" },
+        "load_fifteen": { "frequency": 10, "aggregation": null,  "scope": "node" },
+        "proc_run":     { "frequency": 10, "aggregation": null,  "scope": "node" },
+        "proc_total":   { "frequency": 10, "aggregation": null,  "scope": "node" },
+        "mem_free":     { "frequency": 10, "aggregation": null,  "scope": "node" },
+        "mem_used":     { "frequency": 10, "aggregation": null,  "scope": "node" },
+        "power":        { "frequency": 10, "aggregation": "sum", "scope": "socket" },
+        "mem_bw":       { "frequency": 10, "aggregation": "sum", "scope": "socket" },
+        "flops_sp":     { "frequency": 10, "aggregation": "sum", "scope": "cpu" },
+        "flops_dp":     { "frequency": 10, "aggregation": "sum", "scope": "cpu" },
+        "flops_any":    { "frequency": 10, "aggregation": "sum", "scope": "cpu" },
+        "clock":        { "frequency": 10, "aggregation": "avg", "scope": "cpu" },
+        "cpi":          { "frequency": 10, "aggregation": "avg", "scope": "cpu" }
     },
     "checkpoints": {
         "interval": 21600,
@@ -23,6 +25,7 @@
         "directory": "./var/archive"
     },
     "retention-in-memory": 86400,
-    "nats": "nats://localhost:4222",
+    "http-api-address": "0.0.0.0:8081",
+    "nats": null,
     "jwt-public-key": "kzfYrYy+TzpanWZHJ5qSdMj5uKUWgq74BWhQG6copP0="
 }

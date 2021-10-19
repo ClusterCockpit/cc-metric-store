@@ -30,18 +30,20 @@ type ApiRequestBody struct {
 }
 
 type ApiMetricData struct {
-	From int64   `json:"from"`
-	To   int64   `json:"to"`
-	Data []Float `json:"data"`
+	Error *string `json:"error"`
+	From  int64   `json:"from"`
+	To    int64   `json:"to"`
+	Data  []Float `json:"data"`
 }
 
 type ApiStatsData struct {
-	From    int64 `json:"from"`
-	To      int64 `json:"to"`
-	Samples int   `json:"samples"`
-	Avg     Float `json:"avg"`
-	Min     Float `json:"min"`
-	Max     Float `json:"max"`
+	Error   *string `json:"error"`
+	From    int64   `json:"from"`
+	To      int64   `json:"to"`
+	Samples int     `json:"samples"`
+	Avg     Float   `json:"avg"`
+	Min     Float   `json:"min"`
+	Max     Float   `json:"max"`
 }
 
 func handleTimeseries(rw http.ResponseWriter, r *http.Request) {
@@ -76,8 +78,10 @@ func handleTimeseries(rw http.ResponseWriter, r *http.Request) {
 		for _, metric := range reqBody.Metrics {
 			data, f, t, err := memoryStore.Read(selector, metric, from, to)
 			if err != nil {
-				http.Error(rw, err.Error(), http.StatusInternalServerError)
-				return
+				// http.Error(rw, err.Error(), http.StatusInternalServerError)
+				msg := err.Error()
+				metrics[metric] = ApiMetricData{ Error: &msg }
+				continue
 			}
 
 			metrics[metric] = ApiMetricData{
@@ -128,8 +132,10 @@ func handleStats(rw http.ResponseWriter, r *http.Request) {
 		for _, metric := range reqBody.Metrics {
 			stats, f, t, err := memoryStore.Stats(selector, metric, from, to)
 			if err != nil {
-				http.Error(rw, err.Error(), http.StatusInternalServerError)
-				return
+				// http.Error(rw, err.Error(), http.StatusInternalServerError)
+				msg := err.Error()
+				metrics[metric] = ApiStatsData{ Error: &msg }
+				continue
 			}
 
 			metrics[metric] = ApiStatsData{
