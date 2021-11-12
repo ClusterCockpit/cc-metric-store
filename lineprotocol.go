@@ -55,7 +55,7 @@ type Metric struct {
 // function. handleLine will be called for each line recieved via nats.
 // Send `true` through the done channel for gracefull termination.
 func ReceiveNats(address string, handleLine func(dec *lineprotocol.Decoder) error, workers int, ctx context.Context) error {
-	nc, err := nats.Connect(nats.DefaultURL)
+	nc, err := nats.Connect(address)
 	if err != nil {
 		return err
 	}
