@@ -6,13 +6,23 @@ import (
 )
 
 type SelectorElement struct {
+	Any    bool
 	String string
 	Group  []string
 }
 
 func (se *SelectorElement) UnmarshalJSON(input []byte) error {
 	if input[0] == '"' {
-		return json.Unmarshal(input, &se.String)
+		if err := json.Unmarshal(input, &se.String); err != nil {
+			return err
+		}
+
+		if se.String == "*" {
+			se.Any = true
+			se.String = ""
+		}
+
+		return nil
 	}
 
 	if input[0] == '[' {
@@ -23,6 +33,10 @@ func (se *SelectorElement) UnmarshalJSON(input []byte) error {
 }
 
 func (se *SelectorElement) MarshalJSON() ([]byte, error) {
+	if se.Any {
+		return []byte("\"*\""), nil
+	}
+
 	if se.String != "" {
 		return json.Marshal(se.String)
 	}
@@ -89,6 +103,14 @@ func (l *level) findBuffers(selector Selector, offset int, f func(b *buffer) err
 			}
 		}
 		return nil
+	}
+
+	if sel.Any && l.children != nil {
+		for _, lvl := range l.children {
+			if err := lvl.findBuffers(selector[1:], offset, f); err != nil {
+				return err
+			}
+		}
 	}
 
 	panic("impossible")
