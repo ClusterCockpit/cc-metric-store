@@ -45,6 +45,7 @@ func newBuffer(ts, freq int64) *buffer {
 	b.start = ts
 	b.prev = nil
 	b.next = nil
+	b.archived = false
 	return b
 }
 
@@ -167,7 +168,7 @@ func (b *buffer) iterFromTo(from, to int64, callback func(b *buffer) error) erro
 	}
 
 	end := b.start + int64(len(b.data))*b.frequency
-	if from <= b.start && end <= to {
+	if from <= end && b.start <= to {
 		return callback(b)
 	}
 

@@ -295,6 +295,8 @@ func TestMemoryStoreArchive(t *testing.T) {
 		}
 	}
 
+	// store1.DebugDump(bufio.NewWriter(os.Stdout))
+
 	archiveRoot := t.TempDir()
 	_, err := store1.ToCheckpoint(archiveRoot, 100, 100+int64(count/2))
 	if err != nil {
