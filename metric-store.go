@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -120,6 +121,7 @@ func handleLine(dec *lineprotocol.Decoder) error {
 			return err
 		}
 
+		// log.Printf("write: %s (%v) -> %v\n", string(measurement), selector, value)
 		if err := memoryStore.Write(selector, t.Unix(), []Metric{
 			{Name: string(measurement), Value: value},
 		}); err != nil {
@@ -217,18 +219,25 @@ func main() {
 	if err != nil {
 		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
 	} else {
-		log.Printf("Checkpoints loaded (%d files)\n", files)
+		log.Printf("Checkpoints loaded (%d files, from %s on)\n", files, restoreFrom.Format(time.RFC3339))
 	}
 
 	ctx, shutdown := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup
 	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
 	go func() {
-		<-sigs
-		log.Println("Shuting down...")
-		shutdown()
+		for {
+			sig := <-sigs
+			if sig == syscall.SIGUSR1 {
+				memoryStore.DebugDump(bufio.NewWriter(os.Stdout))
+				continue
+			}
+
+			log.Println("Shuting down...")
+			shutdown()
+		}
 	}()
 
 	intervals(&wg, ctx)

@@ -28,6 +28,8 @@ type CheckpointFile struct {
 	Children map[string]*CheckpointFile    `json:"children"`
 }
 
+var ErrNoNewData error = errors.New("all data already archived")
+
 // Metrics stored at the lowest 2 levels are not stored away (root and cluster)!
 // On a per-host basis a new JSON file is created. I have no idea if this will scale.
 // The good thing: Only a host at a time is locked, so this function can run
@@ -46,15 +48,22 @@ func (m *MemoryStore) ToCheckpoint(dir string, from, to int64) (int, error) {
 	}
 	m.root.lock.RUnlock()
 
+	n := 0
 	for i := 0; i < len(levels); i++ {
 		dir := path.Join(dir, path.Join(selectors[i]...))
 		err := levels[i].toCheckpoint(dir, from, to, m)
 		if err != nil {
+			if err == ErrNoNewData {
+				continue
+			}
+
 			return i, err
 		}
+
+		n += 1
 	}
 
-	return len(levels), nil
+	return 0, nil
 }
 
 func (l *level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFile, error) {
@@ -70,6 +79,18 @@ func (l *level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFil
 	for metric, minfo := range m.metrics {
 		b := l.metrics[minfo.offset]
 		if b == nil {
+			continue
+		}
+
+		allArchived := true
+		b.iterFromTo(from, to, func(b *buffer) error {
+			if !b.archived {
+				allArchived = false
+			}
+			return nil
+		})
+
+		if allArchived {
 			continue
 		}
 
@@ -96,7 +117,13 @@ func (l *level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFil
 			return nil, err
 		}
 
-		retval.Children[name] = val
+		if val != nil {
+			retval.Children[name] = val
+		}
+	}
+
+	if len(retval.Children) == 0 && len(retval.Metrics) == 0 {
+		return nil, nil
 	}
 
 	return retval, nil
@@ -106,6 +133,10 @@ func (l *level) toCheckpoint(dir string, from, to int64, m *MemoryStore) error {
 	cf, err := l.toCheckpointFile(from, to, m)
 	if err != nil {
 		return err
+	}
+
+	if cf == nil {
+		return ErrNoNewData
 	}
 
 	filepath := path.Join(dir, fmt.Sprintf("%d.json", from))
@@ -146,6 +177,7 @@ func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 			data:      metric.Data[0:n:n], // Space is wasted here :(
 			prev:      nil,
 			next:      nil,
+			archived:  true,
 		}
 
 		minfo, ok := m.metrics[name]

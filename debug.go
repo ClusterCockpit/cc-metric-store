@@ -16,7 +16,7 @@ func (b *buffer) debugDump(w *bufio.Writer) {
 	}
 
 	to := b.start + b.frequency*int64(len(b.data))
-	fmt.Fprintf(w, "buffer(from=%d, len=%d, to=%d)%s", b.start, len(b.data), to, end)
+	fmt.Fprintf(w, "buffer(from=%d, len=%d, to=%d, archived=%v)%s", b.start, len(b.data), to, b.archived, end)
 }
 
 func (l *level) debugDump(w *bufio.Writer, m *MemoryStore, indent string) error {
@@ -32,7 +32,7 @@ func (l *level) debugDump(w *bufio.Writer, m *MemoryStore, indent string) error 
 		}
 	}
 
-	if l.children != nil {
+	if l.children != nil && len(l.children) > 0 {
 		fmt.Fprintf(w, "%schildren:\n", indent)
 		for name, lvl := range l.children {
 			fmt.Fprintf(w, "%s'%s':\n", indent, name)

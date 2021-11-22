@@ -36,6 +36,7 @@ type buffer struct {
 	start      int64   // Timestamp of when `data[0]` was written.
 	data       []Float // The slice should never reallocacte as `cap(data)` is respected.
 	prev, next *buffer // `prev` contains older data, `next` newer data.
+	archived   bool    // If true, this buffer is already archived
 }
 
 func newBuffer(ts, freq int64) *buffer {
@@ -153,6 +154,24 @@ func (b *buffer) free(t int64) (int, error) {
 	}
 
 	return 0, nil
+}
+
+// Call `callback` on every buffer that contains data in the range from `from` to `to`.
+func (b *buffer) iterFromTo(from, to int64, callback func(b *buffer) error) error {
+	if b == nil {
+		return nil
+	}
+
+	if err := b.prev.iterFromTo(from, to, callback); err != nil {
+		return err
+	}
+
+	end := b.start + int64(len(b.data))*b.frequency
+	if from <= b.start && end <= to {
+		return callback(b)
+	}
+
+	return nil
 }
 
 // Could also be called "node" as this forms a node in a tree structure.
@@ -369,4 +388,12 @@ func (m *MemoryStore) Free(selector Selector, t int64) (int, error) {
 		return err
 	})
 	return n, err
+}
+
+func (m *MemoryStore) FreeAll() error {
+	for k := range m.root.children {
+		delete(m.root.children, k)
+	}
+
+	return nil
 }

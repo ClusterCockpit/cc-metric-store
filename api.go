@@ -222,8 +222,7 @@ func handleWrite(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reader := bufio.NewReader(r.Body)
-	dec := lineprotocol.NewDecoder(reader)
+	dec := lineprotocol.NewDecoder(bufio.NewReader(r.Body))
 	// Unlike the name suggests, handleLine can handle multiple lines
 	if err := handleLine(dec); err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
@@ -305,6 +304,34 @@ func handleAllNodes(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// func handleCheckpoint(rw http.ResponseWriter, r *http.Request) {
+// 	vars := mux.Vars(r)
+// 	from, err := strconv.ParseInt(vars["from"], 10, 64)
+// 	if err != nil {
+// 		http.Error(rw, err.Error(), http.StatusBadRequest)
+// 		return
+// 	}
+// 	to, err := strconv.ParseInt(vars["to"], 10, 64)
+// 	if err != nil {
+// 		http.Error(rw, err.Error(), http.StatusBadRequest)
+// 		return
+// 	}
+
+// 	log.Println("Checkpoint creation started...")
+// 	n, err := memoryStore.ToCheckpoint(conf.Checkpoints.RootDir, from, to)
+// 	if err != nil {
+// 		log.Printf("Checkpoint creation failed: %s\n", err.Error())
+// 		rw.WriteHeader(http.StatusInternalServerError)
+// 		return
+// 	} else {
+// 		log.Printf("Checkpoint finished (%d files)\n", n)
+// 	}
+
+// 	memoryStore.FreeAll()
+
+// 	rw.WriteHeader(http.StatusOK)
+// }
+
 func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler {
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		authheader := r.Header.Get("Authorization")
@@ -343,6 +370,7 @@ func StartApiServer(address string, ctx context.Context) error {
 	r.HandleFunc("/api/{cluster}/peek", handlePeek)
 	r.HandleFunc("/api/{cluster}/{from:[0-9]+}/{to:[0-9]+}/all-nodes", handleAllNodes)
 	r.HandleFunc("/api/write", handleWrite)
+	// r.HandleFunc("/api/{from:[0-9]+}/{to:[0-9]+}/checkpoint", handleCheckpoint)
 
 	server := &http.Server{
 		Handler:      r,
