@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,10 +31,38 @@ type ApiRequestBody struct {
 }
 
 type ApiMetricData struct {
-	Error *string `json:"error"`
-	From  int64   `json:"from"`
-	To    int64   `json:"to"`
-	Data  []Float `json:"data"`
+	Error *string  `json:"error"`
+	From  int64    `json:"from"`
+	To    int64    `json:"to"`
+	Data  []Float  `json:"data"`
+	Avg   *float64 `json:"avg"`
+	Min   *float64 `json:"min"`
+	Max   *float64 `json:"max"`
+}
+
+// TODO: Optimize this, just like the stats endpoint!
+func (data *ApiMetricData) AddStats() {
+	if len(data.Data) == 0 || data.Error != nil {
+		return
+	}
+
+	n := 0
+	sum, min, max := 0.0, float64(data.Data[0]), float64(data.Data[0])
+	for _, x := range data.Data {
+		if x.IsNaN() {
+			continue
+		}
+
+		n += 1
+		sum += float64(x)
+		min = math.Min(min, float64(x))
+		max = math.Max(max, float64(x))
+	}
+
+	avg := sum / float64(n)
+	data.Avg = &avg
+	data.Min = &min
+	data.Max = &max
 }
 
 type ApiStatsData struct {
@@ -64,6 +93,8 @@ func handleTimeseries(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	withStats := r.URL.Query().Get("with-stats") == "true"
+
 	bodyDec := json.NewDecoder(r.Body)
 	var reqBody ApiRequestBody
 	err = bodyDec.Decode(&reqBody)
@@ -84,11 +115,15 @@ func handleTimeseries(rw http.ResponseWriter, r *http.Request) {
 				continue
 			}
 
-			metrics[metric] = ApiMetricData{
+			amd := ApiMetricData{
 				From: f,
 				To:   t,
 				Data: data,
 			}
+			if withStats {
+				amd.AddStats()
+			}
+			metrics[metric] = amd
 		}
 		res = append(res, metrics)
 	}

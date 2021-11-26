@@ -215,11 +215,12 @@ func main() {
 	memoryStore = NewMemoryStore(conf.Metrics)
 
 	restoreFrom := startupTime.Add(-time.Duration(conf.Checkpoints.Restore) * time.Second)
+	log.Printf("Loading checkpoints newer than %s\n", restoreFrom.Format(time.RFC3339))
 	files, err := memoryStore.FromCheckpoint(conf.Checkpoints.RootDir, restoreFrom.Unix())
 	if err != nil {
 		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
 	} else {
-		log.Printf("Checkpoints loaded (%d files, from %s on)\n", files, restoreFrom.Format(time.RFC3339))
+		log.Printf("Checkpoints loaded (%d files)\n", files)
 	}
 
 	ctx, shutdown := context.WithCancel(context.Background())
