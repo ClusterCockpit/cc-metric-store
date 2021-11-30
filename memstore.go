@@ -82,12 +82,22 @@ func (b *buffer) write(ts int64, value Float) (*buffer, error) {
 	return b, nil
 }
 
-// Return all known values from `from` to `to`. Gaps of information are
-// represented by NaN. If values at the start or end are missing,
-// instead of NaN values, the second and thrid return values contain
-// the actual `from`/`to`.
-// This function goes back the buffer chain if `from` is older than the
-// currents buffer start.
+func (b *buffer) end() int64 {
+	return b.start + int64(len(b.data))*b.frequency
+}
+
+// func interpolate(idx int, data []Float) Float {
+// 	if idx == 0 || idx+1 == len(data) {
+// 		return NaN
+// 	}
+// 	return (data[idx-1] + data[idx+1]) / 2.0
+// }
+
+// Return all known values from `from` to `to`. Gaps of information are represented as NaN.
+// Simple linear interpolation is done between the two neighboring cells if possible.
+// If values at the start or end are missing, instead of NaN values, the second and thrid
+// return values contain the actual `from`/`to`.
+// This function goes back the buffer chain if `from` is older than the currents buffer start.
 // The loaded values are added to `data` and `data` is returned, possibly with a shorter length.
 // If `data` is not long enough to hold all values, this function will panic!
 func (b *buffer) read(from, to int64, data []Float) ([]Float, int64, int64, error) {
@@ -103,10 +113,10 @@ func (b *buffer) read(from, to int64, data []Float) ([]Float, int64, int64, erro
 	for ; t < to; t += b.frequency {
 		idx := int((t - b.start) / b.frequency)
 		if idx >= cap(b.data) {
-			b = b.next
-			if b == nil {
-				return data, from, t, nil
+			if b.next == nil {
+				break
 			}
+			b = b.next
 			idx = 0
 		}
 
@@ -117,6 +127,8 @@ func (b *buffer) read(from, to int64, data []Float) ([]Float, int64, int64, erro
 			data[i] += NaN
 		} else if t < b.start {
 			data[i] += NaN
+			// } else if b.data[idx].IsNaN() {
+			// 	data[i] += interpolate(idx, b.data)
 		} else {
 			data[i] += b.data[idx]
 		}
@@ -129,7 +141,7 @@ func (b *buffer) read(from, to int64, data []Float) ([]Float, int64, int64, erro
 // Free up and free all buffers in the chain only containing data
 // older than `t`.
 func (b *buffer) free(t int64) (int, error) {
-	end := b.start + int64(len(b.data))*b.frequency
+	end := b.end()
 	if end < t && b.next != nil {
 		b.next.prev = nil
 		n := 0
@@ -167,8 +179,7 @@ func (b *buffer) iterFromTo(from, to int64, callback func(b *buffer) error) erro
 		return err
 	}
 
-	end := b.start + int64(len(b.data))*b.frequency
-	if from <= end && b.start <= to {
+	if from <= b.end() && b.start <= to {
 		return callback(b)
 	}
 

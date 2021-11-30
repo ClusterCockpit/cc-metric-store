@@ -92,6 +92,18 @@ func TestMemoryStoreOutOfBounds(t *testing.T) {
 		t.Fatalf("Wrong data (got: %d, %f, %f, expected: %d, %f, %f)",
 			len(data), data[0], data[len(data)-1], count, 0., Float(count-1))
 	}
+
+	testfrom, testlen := int64(100000000), int64(10000)
+	data, from, to, err = store.Read(sel, "a", testfrom, testfrom+testlen)
+	if len(data) != 0 || from != testfrom || to != testfrom || err != nil {
+		t.Fatal("Unexpected data returned when reading range after valid data")
+	}
+
+	testfrom, testlen = 0, 10
+	data, from, to, err = store.Read(sel, "a", testfrom, testfrom+testlen)
+	if len(data) != 0 || from != int64(toffset) || to != int64(toffset) || err != nil {
+		t.Fatal("Unexpected data returned when reading range before valid data")
+	}
 }
 
 func TestMemoryStoreMissingDatapoints(t *testing.T) {
