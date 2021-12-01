@@ -220,7 +220,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
 	} else {
-		log.Printf("Checkpoints loaded (%d files)\n", files)
+		log.Printf("Checkpoints loaded (%d files, that took %dms)\n", files, time.Since(startupTime).Milliseconds())
 	}
 
 	ctx, shutdown := context.WithCancel(context.Background())
