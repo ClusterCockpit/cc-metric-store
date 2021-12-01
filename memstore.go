@@ -375,7 +375,7 @@ func (m *MemoryStore) Read(selector Selector, metric string, from, to int64) ([]
 	if err != nil {
 		return nil, 0, 0, err
 	} else if n == 0 {
-		return nil, 0, 0, errors.New("metric not found")
+		return nil, 0, 0, errors.New("metric or host not found")
 	} else if n > 1 {
 		if minfo.aggregation == AvgAggregation {
 			normalize := 1. / Float(n)
