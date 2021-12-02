@@ -10,7 +10,7 @@ import (
 // in the buffer chain will be created if needed so that no copying
 // of data or reallocation needs to happen on writes.
 const (
-	BUFFER_CAP int = 1024
+	BUFFER_CAP int = 512
 )
 
 // So that we can reuse allocations
@@ -46,6 +46,7 @@ func newBuffer(ts, freq int64) *buffer {
 	b.prev = nil
 	b.next = nil
 	b.archived = false
+	b.data = b.data[:0]
 	return b
 }
 
@@ -152,11 +153,11 @@ func (b *buffer) free(t int64) (int, error) {
 			}
 
 			n += 1
-			b.frequency = 0
-			b.start = 0
-			b.next = nil
-			b.prev = nil
-			bufferPool.Put(b)
+			// Buffers that come from the
+			// archive should not be reused.
+			if cap(b.data) == BUFFER_CAP {
+				bufferPool.Put(b)
+			}
 			b = prev
 		}
 		return n, nil
