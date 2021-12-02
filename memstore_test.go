@@ -61,6 +61,51 @@ func TestMemoryStoreBasics(t *testing.T) {
 
 }
 
+func TestMemoryStoreTooMuchWrites(t *testing.T) {
+	frequency := int64(10)
+	count := BUFFER_CAP*3 + 10
+	store := NewMemoryStore(map[string]MetricConfig{
+		"a": {Frequency: frequency},
+		"b": {Frequency: frequency * 2},
+		"c": {Frequency: frequency / 2},
+		"d": {Frequency: frequency * 3},
+	})
+
+	start := int64(100)
+	for i := 0; i < count; i++ {
+		if err := store.Write([]string{"test"}, start+int64(i)*frequency, []Metric{
+			{Name: "a", Value: Float(i)},
+			{Name: "b", Value: Float(i / 2)},
+			{Name: "c", Value: Float(i * 2)},
+			{Name: "d", Value: Float(i / 3)},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	end := start + int64(count)*frequency
+	data, from, to, err := store.Read(Selector{{String: "test"}}, "a", start, end)
+	if len(data) != count || from != start || to != end || err != nil {
+		t.Fatalf("a: err=%#v, from=%d, to=%d, data=%#v\n", err, from, to, data)
+	}
+
+	data, from, to, err = store.Read(Selector{{String: "test"}}, "b", start, end)
+	if len(data) != count/2 || from != start || to != end || err != nil {
+		t.Fatalf("b: err=%#v, from=%d, to=%d, data=%#v\n", err, from, to, data)
+	}
+
+	data, from, to, err = store.Read(Selector{{String: "test"}}, "c", start, end)
+	if len(data) != count*2-1 || from != start || to != end-frequency/2 || err != nil {
+		t.Fatalf("c: err=%#v, from=%d, to=%d, data=%#v\n", err, from, to, data)
+	}
+
+	data, from, to, err = store.Read(Selector{{String: "test"}}, "d", start, end)
+	if len(data) != count/3+1 || from != start || to != end+frequency*2 || err != nil {
+		t.Errorf("expected: err=nil, from=%d, to=%d, len(data)=%d\n", start, end+frequency*2, count/3)
+		t.Fatalf("d: err=%#v, from=%d, to=%d, data=%#v\n", err, from, to, data)
+	}
+}
+
 func TestMemoryStoreOutOfBounds(t *testing.T) {
 	count := 2000
 	toffset := 1000

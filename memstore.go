@@ -59,7 +59,13 @@ func (b *buffer) write(ts int64, value Float) (*buffer, error) {
 		return nil, errors.New("cannot write value to buffer from past")
 	}
 
-	idx := int((ts - b.start) / b.frequency)
+	// When a new buffer is created, it starts at ts. If we would
+	// use the same index calculation as for a read here, even a very
+	// slight drift in the timestamps of values will cause cases where
+	// a cell is re-written. Adding any value smaller than half the frequency
+	// here creates a time buffer around the cutoff from one cell to the next
+	// with the same semantics as before.
+	idx := int((ts - b.start + (b.frequency / 3)) / b.frequency)
 	if idx >= cap(b.data) {
 		newbuf := newBuffer(ts, b.frequency)
 		newbuf.prev = b
