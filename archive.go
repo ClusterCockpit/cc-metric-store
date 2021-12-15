@@ -66,7 +66,7 @@ func (m *MemoryStore) ToCheckpoint(dir string, from, to int64) (int, error) {
 		n += 1
 	}
 
-	return 0, nil
+	return n, nil
 }
 
 func (l *level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFile, error) {
@@ -399,40 +399,44 @@ func findFiles(direntries []fs.DirEntry, t int64, findMoreRecentFiles bool) ([]s
 
 // ZIP all checkpoint files older than `from` together and write them to the `archiveDir`,
 // deleting them from the `checkpointsDir`.
-func ArchiveCheckpoints(checkpointsDir, archiveDir string, from int64) error {
+func ArchiveCheckpoints(checkpointsDir, archiveDir string, from int64) (int, error) {
 	entries1, err := os.ReadDir(checkpointsDir)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
+	n := 0
 	for _, de1 := range entries1 {
 		entries2, err := os.ReadDir(filepath.Join(checkpointsDir, de1.Name()))
 		if err != nil {
-			return err
+			return n, err
 		}
 
 		for _, de2 := range entries2 {
 			cdir := filepath.Join(checkpointsDir, de1.Name(), de2.Name())
 			adir := filepath.Join(archiveDir, de1.Name(), de2.Name())
-			if err := archiveCheckpoints(cdir, adir, from); err != nil {
-				return err
+			m, err := archiveCheckpoints(cdir, adir, from)
+			n += m
+			if err != nil {
+				return n, err
 			}
+
 		}
 	}
 
-	return nil
+	return n, nil
 }
 
 // Helper function for `ArchiveCheckpoints`.
-func archiveCheckpoints(dir string, archiveDir string, from int64) error {
+func archiveCheckpoints(dir string, archiveDir string, from int64) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	files, err := findFiles(entries, from, false)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	filename := filepath.Join(archiveDir, fmt.Sprintf("%d.zip", from))
@@ -444,40 +448,42 @@ func archiveCheckpoints(dir string, archiveDir string, from int64) error {
 		}
 	}
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer f.Close()
 	bw := bufio.NewWriter(f)
 	zw := zip.NewWriter(bw)
 
+	n := 0
 	for _, jsonFile := range files {
 		filename := filepath.Join(dir, jsonFile)
 		r, err := os.Open(filename)
 		if err != nil {
-			return err
+			return n, err
 		}
 
 		w, err := zw.Create(jsonFile)
 		if err != nil {
-			return err
+			return n, err
 		}
 
 		if _, err = io.Copy(w, r); err != nil {
-			return err
+			return n, err
 		}
 
 		if err = os.Remove(filename); err != nil {
-			return err
+			return n, err
 		}
+		n += 1
 	}
 
 	if err = zw.Close(); err != nil {
-		return err
+		return n, err
 	}
 
 	if err = bw.Flush(); err != nil {
-		return err
+		return n, err
 	}
 
-	return nil
+	return n, nil
 }

@@ -147,13 +147,13 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticks:
-				log.Println("Freeing up memory...")
 				t := time.Now().Add(-d)
+				log.Printf("start freeing buffers (older than %s)...\n", t.Format(time.RFC3339))
 				freed, err := memoryStore.Free(Selector{}, t.Unix())
 				if err != nil {
-					log.Printf("Freeing up memory failed: %s\n", err.Error())
+					log.Printf("freeing up buffers failed: %s\n", err.Error())
 				} else {
-					log.Printf("%d buffers freed\n", freed)
+					log.Printf("done: %d buffers freed\n", freed)
 				}
 			}
 		}
@@ -172,14 +172,14 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticks:
-				log.Println("Checkpoint creation started...")
+				log.Printf("start checkpointing (starting at %s)...\n", lastCheckpoint.Format(time.RFC3339))
 				now := time.Now()
 				n, err := memoryStore.ToCheckpoint(conf.Checkpoints.RootDir,
 					lastCheckpoint.Unix(), now.Unix())
 				if err != nil {
-					log.Printf("Checkpoint creation failed: %s\n", err.Error())
+					log.Printf("checkpointing failed: %s\n", err.Error())
 				} else {
-					log.Printf("Checkpoint finished (%d files)\n", n)
+					log.Printf("done: %d checkpoint files created\n", n)
 					lastCheckpoint = now
 				}
 			}
@@ -198,13 +198,13 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticks:
-				log.Println("Start zipping and deleting old checkpoints...")
 				t := time.Now().Add(-d)
-				err := ArchiveCheckpoints(conf.Checkpoints.RootDir, conf.Archive.RootDir, t.Unix())
+				log.Printf("start archiving checkpoints (older than %s)...\n", t.Format(time.RFC3339))
+				n, err := ArchiveCheckpoints(conf.Checkpoints.RootDir, conf.Archive.RootDir, t.Unix())
 				if err != nil {
-					log.Printf("Archiving failed: %s\n", err.Error())
+					log.Printf("archiving failed: %s\n", err.Error())
 				} else {
-					log.Println("Archiving checkpoints completed!")
+					log.Printf("done: %d files zipped and moved to archive\n", n)
 				}
 			}
 		}
