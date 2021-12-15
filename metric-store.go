@@ -80,6 +80,8 @@ func handleLine(dec *lineprotocol.Decoder) error {
 				typeName = string(val)
 			case "type-id":
 				typeId = string(val)
+			case "unit", "group":
+				// Ignore... (Important only for ganglia)
 			default:
 				return fmt.Errorf("unkown tag: '%s' (value: '%s')", string(key), string(val))
 			}

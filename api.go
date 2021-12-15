@@ -31,23 +31,19 @@ type ApiRequestBody struct {
 }
 
 type ApiMetricData struct {
-	Error *string  `json:"error"`
-	From  int64    `json:"from"`
-	To    int64    `json:"to"`
-	Data  []Float  `json:"data"`
-	Avg   *float64 `json:"avg"`
-	Min   *float64 `json:"min"`
-	Max   *float64 `json:"max"`
+	Error *string `json:"error"`
+	From  int64   `json:"from"`
+	To    int64   `json:"to"`
+	Data  []Float `json:"data"`
+	Avg   Float   `json:"avg"`
+	Min   Float   `json:"min"`
+	Max   Float   `json:"max"`
 }
 
 // TODO: Optimize this, just like the stats endpoint!
 func (data *ApiMetricData) AddStats() {
-	if len(data.Data) == 0 || data.Error != nil {
-		return
-	}
-
 	n := 0
-	sum, min, max := 0.0, float64(data.Data[0]), float64(data.Data[0])
+	sum, min, max := 0.0, math.MaxFloat64, -math.MaxFloat64
 	for _, x := range data.Data {
 		if x.IsNaN() {
 			continue
@@ -59,10 +55,14 @@ func (data *ApiMetricData) AddStats() {
 		max = math.Max(max, float64(x))
 	}
 
-	avg := sum / float64(n)
-	data.Avg = &avg
-	data.Min = &min
-	data.Max = &max
+	if n > 0 {
+		avg := sum / float64(n)
+		data.Avg = Float(avg)
+		data.Min = Float(min)
+		data.Max = Float(max)
+	} else {
+		data.Avg, data.Min, data.Max = NaN, NaN, NaN
+	}
 }
 
 type ApiStatsData struct {

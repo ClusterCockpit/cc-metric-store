@@ -245,6 +245,7 @@ func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 			next:      nil,
 			archived:  true,
 		}
+		b.close()
 
 		minfo, ok := m.metrics[name]
 		if !ok {

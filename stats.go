@@ -20,6 +20,9 @@ func (b *buffer) stats(from, to int64) (Stats, int64, int64, error) {
 		from = b.start
 	}
 
+	// TODO: Check if b.closed and if so and the full buffer is queried,
+	// use b.statistics instead of iterating over the buffer.
+
 	samples := 0
 	sum, min, max := 0.0, math.MaxFloat32, -math.MaxFloat32
 

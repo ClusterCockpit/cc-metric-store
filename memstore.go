@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"math"
 	"sync"
 )
 
@@ -37,6 +38,14 @@ type buffer struct {
 	data       []Float // The slice should never reallocacte as `cap(data)` is respected.
 	prev, next *buffer // `prev` contains older data, `next` newer data.
 	archived   bool    // If true, this buffer is already archived
+
+	closed      bool
+	statisticts struct {
+		samples int
+		min     Float
+		max     Float
+		avg     Float
+	}
 }
 
 func newBuffer(ts, freq int64) *buffer {
@@ -46,6 +55,7 @@ func newBuffer(ts, freq int64) *buffer {
 	b.prev = nil
 	b.next = nil
 	b.archived = false
+	b.closed = false
 	b.data = b.data[:0]
 	return b
 }
@@ -70,6 +80,7 @@ func (b *buffer) write(ts int64, value Float) (*buffer, error) {
 		newbuf := newBuffer(ts, b.frequency)
 		newbuf.prev = b
 		b.next = newbuf
+		b.close()
 		b = newbuf
 		idx = 0
 	}
@@ -91,6 +102,37 @@ func (b *buffer) write(ts int64, value Float) (*buffer, error) {
 
 func (b *buffer) end() int64 {
 	return b.start + int64(len(b.data))*b.frequency
+}
+
+func (b *buffer) close() {
+	if b.closed {
+		return
+	}
+
+	b.closed = true
+	n, sum, min, max := 0, 0., math.MaxFloat64, -math.MaxFloat64
+	for _, x := range b.data {
+		if x.IsNaN() {
+			continue
+		}
+
+		n += 1
+		f := float64(x)
+		sum += f
+		min = math.Min(min, f)
+		max = math.Max(max, f)
+	}
+
+	b.statisticts.samples = n
+	if n > 0 {
+		b.statisticts.avg = Float(sum / float64(n))
+		b.statisticts.min = Float(min)
+		b.statisticts.max = Float(max)
+	} else {
+		b.statisticts.avg = NaN
+		b.statisticts.min = NaN
+		b.statisticts.max = NaN
+	}
 }
 
 // func interpolate(idx int, data []Float) Float {
