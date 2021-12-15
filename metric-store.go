@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -212,8 +213,12 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 }
 
 func main() {
+	var configFile string
+	flag.StringVar(&configFile, "config", "./config.json", "configuration file")
+	flag.Parse()
+
 	startupTime := time.Now()
-	conf = loadConfiguration("config.json")
+	conf = loadConfiguration(configFile)
 	memoryStore = NewMemoryStore(conf.Metrics)
 
 	restoreFrom := startupTime.Add(-time.Duration(conf.Checkpoints.Restore) * time.Second)

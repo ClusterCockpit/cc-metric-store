@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -27,6 +28,7 @@ type CheckpointMetrics struct {
 
 type CheckpointFile struct {
 	From     int64                         `json:"from"`
+	To       int64                         `json:"to"`
 	Metrics  map[string]*CheckpointMetrics `json:"metrics"`
 	Children map[string]*CheckpointFile    `json:"children"`
 }
@@ -75,6 +77,7 @@ func (l *level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFil
 
 	retval := &CheckpointFile{
 		From:     from,
+		To:       to,
 		Metrics:  make(map[string]*CheckpointMetrics),
 		Children: make(map[string]*CheckpointFile),
 	}
@@ -168,8 +171,8 @@ func (l *level) toCheckpoint(dir string, from, to int64, m *MemoryStore) error {
 // This function can only be called once and before the very first write or read.
 // Different host's data is loaded to memory in parallel.
 func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
-	workers := runtime.NumCPU() / 2
-	work := make(chan [2]string, workers)
+	workers := (runtime.NumCPU() / 2) + 1
+	work := make(chan [2]string, workers*2)
 	errs := make(chan error, 1)
 	var wg sync.WaitGroup
 	wg.Add(workers + 1)
@@ -216,8 +219,7 @@ func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
 				lvl := m.root.findLevelOrCreate(host[:], len(m.metrics))
 				n, err := lvl.fromCheckpoint(filepath.Join(dir, host[0], host[1]), from, m)
 				if err != nil {
-					errs <- err
-					return
+					log.Fatalf("error while loading checkpoints: %s", err.Error())
 				}
 				atomic.AddInt32(&loadedFiles, int32(n))
 			}
@@ -249,7 +251,8 @@ func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 
 		minfo, ok := m.metrics[name]
 		if !ok {
-			return errors.New("Unkown metric: " + name)
+			continue
+			// return errors.New("Unkown metric: " + name)
 		}
 
 		prev := l.metrics[minfo.offset]
@@ -336,6 +339,10 @@ func (l *level) fromCheckpoint(dir string, from int64, m *MemoryStore) (int, err
 		cf := &CheckpointFile{}
 		if err = json.NewDecoder(br).Decode(cf); err != nil {
 			return filesLoaded, err
+		}
+
+		if cf.To != 0 && cf.To < from {
+			continue
 		}
 
 		if err = l.loadFile(cf, m); err != nil {
