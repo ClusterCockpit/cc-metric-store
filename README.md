@@ -2,6 +2,8 @@
 
 [![Build & Test](https://github.com/ClusterCockpit/cc-metric-store/actions/workflows/test.yml/badge.svg)](https://github.com/ClusterCockpit/cc-metric-store/actions/workflows/test.yml)
 
+The cc-metric-store provides a simple in-memory time series database for storing metrics of cluster nodes at preconfigured intervals. It is meant to be used as part of the [ClusterCockpit suite](https://github.com/ClusterCockpit). As all data is kept in-memory (but written to disk as compressed JSON for long term storage), accessing it is very fast. It also provides aggregations over time *and* nodes/sockets/cpus.
+
 Go look at the `TODO.md` file and the [GitHub Issues](https://github.com/ClusterCockpit/cc-metric-store/issues) for a progress overview. Things work, but are not properly tested.
 The [NATS.io](https://nats.io/) based writing endpoint consumes messages in [this format of the InfluxDB line protocol](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md).
 

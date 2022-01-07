@@ -62,7 +62,7 @@ func handleLine(dec *lineprotocol.Decoder) error {
 			return err
 		}
 
-		var cluster, host, typeName, typeId string
+		var cluster, host, typeName, typeId, subType, subTypeId string
 		for {
 			key, val, err := dec.NextTag()
 			if err != nil {
@@ -81,18 +81,24 @@ func handleLine(dec *lineprotocol.Decoder) error {
 				typeName = string(val)
 			case "type-id":
 				typeId = string(val)
-			case "unit", "group":
-				// Ignore... (Important only for ganglia)
+			case "subtype":
+				subType = string(val)
+			case "stype-id":
+				subTypeId = string(val)
 			default:
-				return fmt.Errorf("unkown tag: '%s' (value: '%s')", string(key), string(val))
+				// Ignore unkown tags (cc-metric-collector might send us a unit for example that we do not need)
+				// return fmt.Errorf("unkown tag: '%s' (value: '%s')", string(key), string(val))
 			}
 		}
 
-		selector := make([]string, 0, 3)
-		selector = append(selector, cluster)
-		selector = append(selector, host)
+		selector := make([]string, 2, 4)
+		selector[0] = cluster
+		selector[1] = host
 		if len(typeId) > 0 {
 			selector = append(selector, typeName+typeId)
+			if len(subTypeId) > 0 {
+				selector = append(selector, subType+subTypeId)
+			}
 		}
 
 		var value Float
