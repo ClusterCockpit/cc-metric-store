@@ -370,14 +370,15 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 
 	response := make([]ApiQueryResponse, 0, len(req.Queries))
 	for _, query := range req.Queries {
+		q := query // One of the few shitty things about Go: range looped-over variables are in the outer scope
 		res := ApiQueryResponse{
-			Query: &query,
+			Query: &q,
 		}
 
 		sel := Selector{SelectorElement{String: req.Cluster}, SelectorElement{String: query.Hostname}}
 		if query.Type != nil {
 			if len(query.TypeIds) == 1 {
-				sel = append(sel, SelectorElement{String: query.TypeIds[0]})
+				sel = append(sel, SelectorElement{String: *query.Type + query.TypeIds[0]})
 			} else {
 				ids := make([]string, len(query.TypeIds))
 				for i, id := range query.TypeIds {
@@ -388,7 +389,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 
 			if query.SubType != nil {
 				if len(query.SubTypeIds) == 1 {
-					sel = append(sel, SelectorElement{String: query.SubTypeIds[0]})
+					sel = append(sel, SelectorElement{String: *query.SubType + query.SubTypeIds[0]})
 				} else {
 					ids := make([]string, len(query.SubTypeIds))
 					for i, id := range query.SubTypeIds {
@@ -399,6 +400,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// log.Printf("selector (metric: %s): %v", query.Metric, sel)
 		res.Data, res.From, res.To, err = memoryStore.Read(sel, query.Metric, req.From, req.To)
 		if err != nil {
 			msg := err.Error()
