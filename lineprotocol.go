@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/influxdata/line-protocol/v2/lineprotocol"
 	"github.com/nats-io/nats.go"
@@ -111,5 +113,122 @@ func ReceiveNats(address string, handleLine func(dec *lineprotocol.Decoder) erro
 
 	nc.Close()
 	log.Println("NATS connection closed")
+	return nil
+}
+
+func decodeLine(dec *lineprotocol.Decoder) error {
+	for dec.Next() {
+		rawmeasurement, err := dec.Measurement()
+		if err != nil {
+			return err
+		}
+
+		var cluster, host, typeName, typeId, subType, subTypeId string
+		for {
+			key, val, err := dec.NextTag()
+			if err != nil {
+				return err
+			}
+			if key == nil {
+				break
+			}
+
+			switch string(key) {
+			case "cluster":
+				cluster = string(val)
+			case "hostname":
+				host = string(val)
+			case "type":
+				typeName = string(val)
+			case "type-id":
+				typeId = string(val)
+			case "subtype":
+				subType = string(val)
+			case "stype-id":
+				subTypeId = string(val)
+			default:
+				// Ignore unkown tags (cc-metric-collector might send us a unit for example that we do not need)
+				// return fmt.Errorf("unkown tag: '%s' (value: '%s')", string(key), string(val))
+			}
+		}
+
+		selector := make([]string, 2, 4)
+		selector[0] = cluster
+		selector[1] = host
+		if len(typeId) > 0 {
+			selector = append(selector, typeName+typeId)
+			if len(subTypeId) > 0 {
+				selector = append(selector, subType+subTypeId)
+			}
+		}
+
+		metrics := make([]Metric, 0, 10)
+		measurement := string(rawmeasurement)
+		if measurement == "data" {
+			for {
+				key, val, err := dec.NextField()
+				if err != nil {
+					return err
+				}
+
+				if key == nil {
+					break
+				}
+
+				var value Float
+				if val.Kind() == lineprotocol.Float {
+					value = Float(val.FloatV())
+				} else if val.Kind() == lineprotocol.Int {
+					value = Float(val.IntV())
+				} else {
+					return fmt.Errorf("unsupported value type in message: %s", val.Kind().String())
+				}
+
+				metrics = append(metrics, Metric{
+					Name:  string(key),
+					Value: value,
+				})
+			}
+		} else {
+			var value Float
+			for {
+				key, val, err := dec.NextField()
+				if err != nil {
+					return err
+				}
+
+				if key == nil {
+					break
+				}
+
+				if string(key) != "value" {
+					return fmt.Errorf("unkown field: '%s' (value: %#v)", string(key), val)
+				}
+
+				if val.Kind() == lineprotocol.Float {
+					value = Float(val.FloatV())
+				} else if val.Kind() == lineprotocol.Int {
+					value = Float(val.IntV())
+				} else {
+					return fmt.Errorf("unsupported value type in message: %s", val.Kind().String())
+				}
+			}
+
+			metrics = append(metrics, Metric{
+				Name:  measurement,
+				Value: value,
+			})
+		}
+
+		t, err := dec.Time(lineprotocol.Second, time.Now())
+		if err != nil {
+			return err
+		}
+
+		// log.Printf("write: %s (%v) -> %v\n", string(measurement), selector, value)
+		if err := memoryStore.Write(selector, t.Unix(), metrics); err != nil {
+			return err
+		}
+	}
 	return nil
 }

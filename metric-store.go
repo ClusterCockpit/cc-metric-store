@@ -12,8 +12,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/influxdata/line-protocol/v2/lineprotocol"
 )
 
 type MetricConfig struct {
@@ -53,91 +51,6 @@ func loadConfiguration(file string) Config {
 	jsonParser := json.NewDecoder(configFile)
 	jsonParser.Decode(&config)
 	return config
-}
-
-func handleLine(dec *lineprotocol.Decoder) error {
-	for dec.Next() {
-		measurement, err := dec.Measurement()
-		if err != nil {
-			return err
-		}
-
-		var cluster, host, typeName, typeId, subType, subTypeId string
-		for {
-			key, val, err := dec.NextTag()
-			if err != nil {
-				return err
-			}
-			if key == nil {
-				break
-			}
-
-			switch string(key) {
-			case "cluster":
-				cluster = string(val)
-			case "hostname":
-				host = string(val)
-			case "type":
-				typeName = string(val)
-			case "type-id":
-				typeId = string(val)
-			case "subtype":
-				subType = string(val)
-			case "stype-id":
-				subTypeId = string(val)
-			default:
-				// Ignore unkown tags (cc-metric-collector might send us a unit for example that we do not need)
-				// return fmt.Errorf("unkown tag: '%s' (value: '%s')", string(key), string(val))
-			}
-		}
-
-		selector := make([]string, 2, 4)
-		selector[0] = cluster
-		selector[1] = host
-		if len(typeId) > 0 {
-			selector = append(selector, typeName+typeId)
-			if len(subTypeId) > 0 {
-				selector = append(selector, subType+subTypeId)
-			}
-		}
-
-		var value Float
-		for {
-			key, val, err := dec.NextField()
-			if err != nil {
-				return err
-			}
-
-			if key == nil {
-				break
-			}
-
-			if string(key) != "value" {
-				return fmt.Errorf("unkown field: '%s' (value: %#v)", string(key), val)
-			}
-
-			if val.Kind() == lineprotocol.Float {
-				value = Float(val.FloatV())
-			} else if val.Kind() == lineprotocol.Int {
-				value = Float(val.IntV())
-			} else {
-				return fmt.Errorf("unsupported value type in message: %s", val.Kind().String())
-			}
-		}
-
-		t, err := dec.Time(lineprotocol.Second, time.Now())
-		if err != nil {
-			return err
-		}
-
-		// log.Printf("write: %s (%v) -> %v\n", string(measurement), selector, value)
-		if err := memoryStore.Write(selector, t.Unix(), []Metric{
-			{Name: string(measurement), Value: value},
-		}); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func intervals(wg *sync.WaitGroup, ctx context.Context) {
@@ -270,8 +183,8 @@ func main() {
 		wg.Add(1)
 
 		go func() {
-			// err := ReceiveNats(conf.Nats, handleLine, runtime.NumCPU()-1, ctx)
-			err := ReceiveNats(conf.Nats, handleLine, 1, ctx)
+			// err := ReceiveNats(conf.Nats, decodeLine, runtime.NumCPU()-1, ctx)
+			err := ReceiveNats(conf.Nats, decodeLine, 1, ctx)
 
 			if err != nil {
 				log.Fatal(err)
