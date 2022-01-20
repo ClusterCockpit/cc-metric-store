@@ -247,8 +247,9 @@ type level struct {
 
 // Find the correct level for the given selector, creating it if
 // it does not exist. Example selector in the context of the
-// ClusterCockpit could be: []string{ "emmy", "host123", "cpu", "0" }
+// ClusterCockpit could be: []string{ "emmy", "host123", "cpu0" }.
 // This function would probably benefit a lot from `level.children` beeing a `sync.Map`?
+// If nMetrics is -1, do not create new levels.
 func (l *level) findLevelOrCreate(selector []string, nMetrics int) *level {
 	if len(selector) == 0 {
 		return l
@@ -261,6 +262,9 @@ func (l *level) findLevelOrCreate(selector []string, nMetrics int) *level {
 	if l.children == nil {
 		// Children map needs to be created...
 		l.lock.RUnlock()
+		if nMetrics == -1 {
+			return nil
+		}
 	} else {
 		child, ok := l.children[selector[0]]
 		l.lock.RUnlock()
@@ -457,4 +461,22 @@ func (m *MemoryStore) FreeAll() error {
 	}
 
 	return nil
+}
+
+// Given a selector, return a list of all children of the level selected.
+func (m *MemoryStore) ListChildren(selector []string) []string {
+	lvl := m.root.findLevelOrCreate(selector, -1)
+	if lvl == nil {
+		return nil
+	}
+
+	lvl.lock.RLock()
+	defer lvl.lock.RUnlock()
+
+	children := make([]string, 0, len(lvl.children))
+	for child := range lvl.children {
+		children = append(children, child)
+	}
+
+	return children
 }
