@@ -9,32 +9,7 @@ The [NATS.io](https://nats.io/) based writing endpoint consumes messages in [thi
 
 ### REST API Endpoints
 
-In case `jwt-public-key` is a non-empty string in the `config.json` file, the API is protected by JWT based authentication. The signing algorithm has to be `Ed25519`, but no
-fields are required in the JWT payload. Expiration will be checked if specified. The JWT has to be provided using the HTTP `Authorization` header.
-
-All but one endpoints use *selectors* to access the data. A selector must be an array of strings or another array of strings. Examples are provided below.
-
-In the requests, `to` and `from` have to be UNIX timestamps in seconds. The response might also contain `from`/`to` timestamps. They can differ from those in the request,
-if there was not data for a section of the requested data.
-
-1. `POST /api/<from>/<to>/timeseries`
-    - Request-Body: `{ "selectors": [<sel1>, <sel2>, <sel3>, ...], "metrics": ["flops_any", "load_one", ...] }`
-    - The response will be a JSON array, each entry in the array corresponding to the selector found at that index in the request's `selectors` array
-    - Each array entry will be a map from every requested metric to this: `{ "from": Timestamp, "to": Timestamp, "data": Array of Floats }`
-    - Some values in `data` might be `null` if there is no data available for that time slot
-2. `POST /api/<from>/<to>/stats`
-    - The Request-Body shall be the same as for a `timeseries` query
-    - The response will be a JSON array, each entry in the array corresponding to the selector found at that index in the request's `selectors` array
-    - Each array entry will be a map from every requested metric to this: `{ "from": Timestamp, "to": Timestamp, "samples": Int, "avg": Float, "min": Float, "max": Float }`
-    - If the `samples` value is 0, the statistics should be ignored.
-3. `POST /api/<to>/free`
-    - Request-Body: Array of selectors
-    - This request will free up and release all data older than `to` for all nodes specified by the selectors
-4. `GET /api/{cluster}/peek`
-    - Return a map from every node in the specified cluster to a map from every metric to the newest value available for that metric
-    - All cpu/socket level metrics are aggregated to the node level
-5. `POST /api/write`
-    - You can send lines of the InfluxDB line protocol to this endpoint and they will be written to the store (Basically an alternative to NATS)
+The REST API is documented in [openapi.yaml](./openapi.yaml) in the OpenAPI 3.0 format.
 
 ### Run tests
 
@@ -51,7 +26,7 @@ go test -v ./...
 go test -bench=. -race -v ./...
 ```
 
-### What are these selectors mentioned in the code and API?
+### What are these selectors mentioned in the code?
 
 Tags in InfluxDB are used to build indexes over the stored data. InfluxDB-Tags have no
 relation to each other, they do not depend on each other and have no hierarchy.
@@ -149,23 +124,10 @@ And finally, use the API to fetch some data. The API is protected by JWT based a
 JWT="eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSJ9.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlcyI6WyJST0xFX0FETUlOIiwiUk9MRV9BTkFMWVNUIiwiUk9MRV9VU0VSIl19.d-3_3FZTsadPjDEdsWrrQ7nS0edMAR4zjl-eK7rJU3HziNBfI9PDHDIpJVHTNN5E5SlLGLFXctWyKAkwhXL-Dw"
 
 # If the collector and store and nats-server have been running for at least 60 seconds on the same host, you may run:
-curl -H "Authorization: Bearer $JWT" -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\"]], \"metrics\": [\"load_one\"] }"
-
-# Get flops_any for all CPUs:
-curl -H "Authorization: Bearer $JWT" -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\"]], \"metrics\": [\"flops_any\"] }"
-
-# Get flops_any for CPU 0:
-curl -H "Authorization: Bearer $JWT" -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\", \"cpu0\"]], \"metrics\": [\"flops_any\"] }"
-
-# Get flops_any for CPU 0, 1, 2 and 3:
-curl -H "Authorization: Bearer $JWT" -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/timeseries" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\", [\"cpu0\", \"cpu1\", \"cpu2\", \"cpu3\"]]], \"metrics\": [\"flops_any\"] }"
-
-# Stats for load_one and proc_run:
-curl -H "Authorization: Bearer $JWT" -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/stats" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\"]], \"metrics\": [\"load_one\", \"proc_run\"] }"
-
-# Stats for *all* CPUs aggregated both from CPU to node and over time:
-curl -H "Authorization: Bearer $JWT" -D - "http://localhost:8080/api/$(expr $(date +%s) - 60)/$(date +%s)/stats" -d "{ \"selectors\": [[\"testcluster\", \"$(hostname)\"]], \"metrics\": [\"flops_sp\", \"flops_dp\"] }"
-
+curl -H "Authorization: Bearer $JWT" -D - "http://localhost:8080/api/query" -d "{ \"cluster\": \"testcluster\", \"from\": $(expr $(date +%s) - 60), \"to\": $(date +%s), \"queries\": [{
+  \"metric\": \"load_one\",
+  \"hostname\": \"$(hostname)\"
+}] }"
 
 # ...
 ```
