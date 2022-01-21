@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"math"
 	"sync"
 )
 
@@ -39,13 +38,15 @@ type buffer struct {
 	prev, next *buffer // `prev` contains older data, `next` newer data.
 	archived   bool    // If true, this buffer is already archived
 
-	closed      bool
-	statisticts struct {
-		samples int
-		min     Float
-		max     Float
-		avg     Float
-	}
+	closed bool
+	/*
+		statisticts struct {
+			samples int
+			min     Float
+			max     Float
+			avg     Float
+		}
+	*/
 }
 
 func newBuffer(ts, freq int64) *buffer {
@@ -104,6 +105,9 @@ func (b *buffer) end() int64 {
 	return b.start + int64(len(b.data))*b.frequency
 }
 
+func (b *buffer) close() {}
+
+/*
 func (b *buffer) close() {
 	if b.closed {
 		return
@@ -134,6 +138,7 @@ func (b *buffer) close() {
 		b.statisticts.max = NaN
 	}
 }
+*/
 
 // func interpolate(idx int, data []Float) Float {
 // 	if idx == 0 || idx+1 == len(data) {
@@ -362,7 +367,11 @@ func NewMemoryStore(metrics map[string]MetricConfig) *MemoryStore {
 // Write all values in `metrics` to the level specified by `selector` for time `ts`.
 // Look at `findLevelOrCreate` for how selectors work.
 func (m *MemoryStore) Write(selector []string, ts int64, metrics []Metric) error {
-	l := m.root.findLevelOrCreate(selector, len(m.metrics))
+	return m.WriteToLevel(&m.root, selector, ts, metrics)
+}
+
+func (m *MemoryStore) WriteToLevel(l *level, selector []string, ts int64, metrics []Metric) error {
+	l = l.findLevelOrCreate(selector, len(m.metrics))
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
