@@ -4,49 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/influxdata/line-protocol/v2/lineprotocol"
 	"github.com/nats-io/nats.go"
 )
-
-// Go's JSON encoder for floats does not support NaN (https://github.com/golang/go/issues/3480).
-// This program uses NaN as a signal for missing data.
-// For the HTTP JSON API to be able to handle NaN values,
-// we have to use our own type which implements encoding/json.Marshaler itself.
-type Float float64
-
-var NaN Float = Float(math.NaN())
-
-func (f Float) IsNaN() bool {
-	return math.IsNaN(float64(f))
-}
-
-func (f Float) MarshalJSON() ([]byte, error) {
-	if math.IsNaN(float64(f)) {
-		return []byte("null"), nil
-	}
-
-	return []byte(strconv.FormatFloat(float64(f), 'f', 2, 64)), nil
-}
-
-func (f *Float) UnmarshalJSON(input []byte) error {
-	s := string(input)
-	if s == "null" {
-		*f = NaN
-		return nil
-	}
-
-	val, err := strconv.ParseFloat(s, 64)
-	if err != nil {
-		return err
-	}
-	*f = Float(val)
-	return nil
-}
 
 type Metric struct {
 	Name  string

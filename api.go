@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -21,13 +22,13 @@ import (
 )
 
 type ApiMetricData struct {
-	Error *string `json:"error,omitempty"`
-	From  int64   `json:"from"`
-	To    int64   `json:"to"`
-	Data  []Float `json:"data,omitempty"`
-	Avg   Float   `json:"avg"`
-	Min   Float   `json:"min"`
-	Max   Float   `json:"max"`
+	Error *string    `json:"error,omitempty"`
+	From  int64      `json:"from"`
+	To    int64      `json:"to"`
+	Data  FloatArray `json:"data,omitempty"`
+	Avg   Float      `json:"avg"`
+	Min   Float      `json:"min"`
+	Max   Float      `json:"max"`
 }
 
 // TODO: Optimize this, just like the stats endpoint!
@@ -109,7 +110,13 @@ func handleWrite(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dec := lineprotocol.NewDecoder(bufio.NewReader(r.Body))
+	bytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	dec := lineprotocol.NewDecoderWithBytes(bytes)
 	if err := decodeLine(dec); err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
