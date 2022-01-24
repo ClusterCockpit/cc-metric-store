@@ -50,6 +50,7 @@ func (f *Float) UnmarshalJSON(input []byte) error {
 
 type Metric struct {
 	Name  string
+	minfo metricInfo
 	Value Float
 }
 
@@ -116,6 +117,25 @@ func ReceiveNats(address string, handleLine func(dec *lineprotocol.Decoder) erro
 	return nil
 }
 
+// Place `prefix` in front of `buf` but if possible,
+// do that inplace in `buf`.
+func reorder(buf, prefix []byte) []byte {
+	n := len(prefix)
+	m := len(buf)
+	if cap(buf) < m+n {
+		return append(prefix[:n:n], buf...)
+	} else {
+		buf = buf[:n+m]
+		for i := m - 1; i >= 0; i-- {
+			buf[i+n] = buf[i]
+		}
+		for i := 0; i < n; i++ {
+			buf[i] = prefix[i]
+		}
+		return buf
+	}
+}
+
 func decodeLine(dec *lineprotocol.Decoder) error {
 	// Reduce allocations in loop:
 	t := time.Now()
@@ -126,17 +146,31 @@ func decodeLine(dec *lineprotocol.Decoder) error {
 	// Optimize for the case where all lines in a "batch" are about the same
 	// cluster and host. By using `WriteToLevel` (level = host), we do not need
 	// to take the root- and cluster-level lock as often.
-	var hostLevel *level = nil
+	var lvl *level = nil
 	var prevCluster, prevHost string = "", ""
 
 	for dec.Next() {
+		metrics = metrics[:0]
 		rawmeasurement, err := dec.Measurement()
 		if err != nil {
 			return err
 		}
 
+		// A more dense lp format if supported if the measurement is 'data'.
+		// In that case, the field keys are used as metric names.
+		if string(rawmeasurement) != "data" {
+			minfo, ok := memoryStore.metrics[string(rawmeasurement)]
+			if !ok {
+				continue
+			}
+
+			metrics = append(metrics, Metric{
+				minfo: minfo,
+			})
+		}
+
+		typeBuf, subTypeBuf := typeBuf[:0], subTypeBuf[:0]
 		var cluster, host string
-		var typeName, typeId, subType, subTypeId []byte
 		for {
 			key, val, err := dec.NextTag()
 			if err != nil {
@@ -153,54 +187,57 @@ func decodeLine(dec *lineprotocol.Decoder) error {
 					cluster = prevCluster
 				} else {
 					cluster = string(val)
+					lvl = nil
 				}
-			case "hostname":
+			case "hostname", "host":
 				if string(val) == prevHost {
 					host = prevHost
 				} else {
 					host = string(val)
+					lvl = nil
 				}
 			case "type":
-				typeName = val
+				if string(val) == "node" {
+					break
+				}
+
+				if len(typeBuf) == 0 {
+					typeBuf = append(typeBuf, val...)
+				} else {
+					typeBuf = reorder(typeBuf, val)
+				}
 			case "type-id":
-				typeId = val
+				typeBuf = append(typeBuf, val...)
 			case "subtype":
-				subType = val
+				if len(subTypeBuf) == 0 {
+					subTypeBuf = append(subTypeBuf, val...)
+				} else {
+					subTypeBuf = reorder(typeBuf, val)
+				}
 			case "stype-id":
-				subTypeId = val
+				subTypeBuf = append(subTypeBuf, val...)
 			default:
 				// Ignore unkown tags (cc-metric-collector might send us a unit for example that we do not need)
 				// return fmt.Errorf("unkown tag: '%s' (value: '%s')", string(key), string(val))
 			}
 		}
 
-		if hostLevel == nil || prevCluster != cluster || prevHost != host {
-			prevCluster = cluster
-			prevHost = host
+		if lvl == nil {
 			selector = selector[:2]
-			selector[0] = cluster
-			selector[1] = host
-			hostLevel = memoryStore.root.findLevelOrCreate(selector, len(memoryStore.metrics))
+			selector[0], selector[1] = cluster, host
+			lvl = memoryStore.GetLevel(selector)
+			prevCluster, prevHost = cluster, host
 		}
 
 		selector = selector[:0]
-		if len(typeId) > 0 {
-			typeBuf = typeBuf[:0]
-			typeBuf = append(typeBuf, typeName...)
-			typeBuf = append(typeBuf, typeId...)
+		if len(typeBuf) > 0 {
 			selector = append(selector, string(typeBuf)) // <- Allocation :(
-			if len(subTypeId) > 0 {
-				subTypeBuf = subTypeBuf[:0]
-				subTypeBuf = append(subTypeBuf, subType...)
-				subTypeBuf = append(subTypeBuf, subTypeId...)
+			if len(subTypeBuf) > 0 {
 				selector = append(selector, string(subTypeBuf))
 			}
 		}
 
-		metrics = metrics[:0]
-		// A more dense lp format if supported if the measurement is 'data'.
-		// In that case, the field keys are used as metric names.
-		if string(rawmeasurement) == "data" {
+		if len(metrics) == 0 {
 			for {
 				key, val, err := dec.NextField()
 				if err != nil {
@@ -220,13 +257,17 @@ func decodeLine(dec *lineprotocol.Decoder) error {
 					return fmt.Errorf("unsupported value type in message: %s", val.Kind().String())
 				}
 
+				minfo, ok := memoryStore.metrics[string(key)]
+				if !ok {
+					continue
+				}
+
 				metrics = append(metrics, Metric{
-					Name:  string(key), // <- Allocation :(
+					minfo: minfo,
 					Value: value,
 				})
 			}
 		} else {
-			measurement := string(rawmeasurement) // <- Allocation :(
 			var value Float
 			for {
 				key, val, err := dec.NextField()
@@ -251,10 +292,7 @@ func decodeLine(dec *lineprotocol.Decoder) error {
 				}
 			}
 
-			metrics = append(metrics, Metric{
-				Name:  measurement,
-				Value: value,
-			})
+			metrics[0].Value = value
 		}
 
 		t, err = dec.Time(lineprotocol.Second, t)
@@ -263,7 +301,7 @@ func decodeLine(dec *lineprotocol.Decoder) error {
 		}
 
 		// log.Printf("write: %s (%v) -> %v\n", string(measurement), selector, value)
-		if err := memoryStore.WriteToLevel(hostLevel, selector, t.Unix(), metrics); err != nil {
+		if err := memoryStore.WriteToLevel(lvl, selector, t.Unix(), metrics); err != nil {
 			return err
 		}
 	}

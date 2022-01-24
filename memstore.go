@@ -313,23 +313,21 @@ const (
 	AvgAggregation
 )
 
+type metricInfo struct {
+	offset      int
+	aggregation AggregationStrategy
+	frequency   int64
+}
+
 type MemoryStore struct {
 	root    level // root of the tree structure
-	metrics map[string]struct {
-		offset      int
-		aggregation AggregationStrategy
-		frequency   int64
-	}
+	metrics map[string]metricInfo
 }
 
 // Return a new, initialized instance of a MemoryStore.
 // Will panic if values in the metric configurations are invalid.
 func NewMemoryStore(metrics map[string]MetricConfig) *MemoryStore {
-	ms := make(map[string]struct {
-		offset      int
-		aggregation AggregationStrategy
-		frequency   int64
-	})
+	ms := make(map[string]metricInfo)
 
 	offset := 0
 	for key, config := range metrics {
@@ -342,11 +340,11 @@ func NewMemoryStore(metrics map[string]MetricConfig) *MemoryStore {
 			panic("invalid aggregation strategy: " + config.Aggregation)
 		}
 
-		ms[key] = struct {
-			offset      int
-			aggregation AggregationStrategy
-			frequency   int64
-		}{
+		if config.Frequency == 0 {
+			panic("invalid frequency")
+		}
+
+		ms[key] = metricInfo{
 			offset:      offset,
 			aggregation: aggregation,
 			frequency:   config.Frequency,
@@ -367,26 +365,40 @@ func NewMemoryStore(metrics map[string]MetricConfig) *MemoryStore {
 // Write all values in `metrics` to the level specified by `selector` for time `ts`.
 // Look at `findLevelOrCreate` for how selectors work.
 func (m *MemoryStore) Write(selector []string, ts int64, metrics []Metric) error {
+	var ok bool
+	for i, metric := range metrics {
+		if metric.minfo.frequency == 0 {
+			metric.minfo, ok = m.metrics[metric.Name]
+			if !ok {
+				metric.minfo.frequency = 0
+			}
+			metrics[i] = metric
+		}
+	}
+
 	return m.WriteToLevel(&m.root, selector, ts, metrics)
 }
 
+func (m *MemoryStore) GetLevel(selector []string) *level {
+	return m.root.findLevelOrCreate(selector, len(m.metrics))
+}
+
+// Assumes that `minfo` in `metrics` is filled in!
 func (m *MemoryStore) WriteToLevel(l *level, selector []string, ts int64, metrics []Metric) error {
 	l = l.findLevelOrCreate(selector, len(m.metrics))
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
 	for _, metric := range metrics {
-		minfo, ok := m.metrics[metric.Name]
-		if !ok {
-			// return errors.New("Unknown metric: " + metric.Name)
+		if metric.minfo.frequency == 0 {
 			continue
 		}
 
-		b := l.metrics[minfo.offset]
+		b := l.metrics[metric.minfo.offset]
 		if b == nil {
 			// First write to this metric and level
-			b = newBuffer(ts, minfo.frequency)
-			l.metrics[minfo.offset] = b
+			b = newBuffer(ts, metric.minfo.frequency)
+			l.metrics[metric.minfo.offset] = b
 		}
 
 		nb, err := b.write(ts, metric.Value)
@@ -396,7 +408,7 @@ func (m *MemoryStore) WriteToLevel(l *level, selector []string, ts int64, metric
 
 		// Last write created a new buffer...
 		if b != nb {
-			l.metrics[minfo.offset] = nb
+			l.metrics[metric.minfo.offset] = nb
 		}
 	}
 	return nil
