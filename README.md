@@ -4,6 +4,8 @@
 
 The cc-metric-store provides a simple in-memory time series database for storing metrics of cluster nodes at preconfigured intervals. It is meant to be used as part of the [ClusterCockpit suite](https://github.com/ClusterCockpit). As all data is kept in-memory (but written to disk as compressed JSON for long term storage), accessing it is very fast. It also provides aggregations over time *and* nodes/sockets/cpus.
 
+There are major limitations: Data only gets written to disk at periodic checkpoints, not as soon as it is received.
+
 Go look at the `TODO.md` file and the [GitHub Issues](https://github.com/ClusterCockpit/cc-metric-store/issues) for a progress overview. Things work, but are not properly tested.
 The [NATS.io](https://nats.io/) based writing endpoint consumes messages in [this format of the InfluxDB line protocol](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md).
 
@@ -63,23 +65,31 @@ Example selectors:
 
 ### Config file
 
-All durations are specified in seconds.
+All durations are specified as string that will be parsed [like this](https://pkg.go.dev/time#ParseDuration) (Allowed suffixes: `s`, `m`, `h`, ...).
 
 - `metrics`: Map of metric-name to objects with the following properties
-    - `frequency`: Timestep/Interval/Resolution of this metric (In seconds)
+    - `frequency`: Timestep/Interval/Resolution of this metric
     - `aggregation`: Can be `"sum"`, `"avg"` or `null`
         - `null` means aggregation across nodes is forbidden for this metric
         - `"sum"` means that values from the child levels are summed up for the parent level
         - `"avg"` means that values from the child levels are averaged for the parent level
-    - `scope`: Unused at the moment, should be something like `"node"`, `"socket"` or `"cpu"`
+    - `scope`: Unused at the moment, should be something like `"node"`, `"socket"` or `"hwthread"`
 - `nats`: Url of NATS.io server (The `updates` channel will be subscribed for metrics), example: "nats://localhost:4222"
 - `http-api-address`: Where to listen via HTTP, example: ":8080"
 - `jwt-public-key`: Base64 encoded string, use this to verify requests to the HTTP API
-- `retention-on-memory`: Keep all values in memory for at least that amount of seconds
+- `retention-on-memory`: Keep all values in memory for at least that amount of time
+- `checkpoints`:
+    - `interval`: Do checkpoints every X seconds/minutes/hours
+    - `directory`: Path to a directory
+    - `restore`: After a restart, load the last X seconds/minutes/hours of data back into memory
+
+- `archive`:
+    - `interval`: Move and compress all checkpoints not needed anymore every X seconds/minutes/hours
+    - `directory`: Path to a directory
 
 ### Test the complete setup (excluding ClusterCockpit itself)
 
-First, get a NATS server running:
+There are two ways for sending data to the cc-metric-store, both of which are supported by the [cc-metric-collector](https://github.com/ClusterCockpit/cc-metric-collector). This example uses Nats, the alternative is to use HTTP.
 
 ```sh
 # Only needed once, downloads the docker image
@@ -89,21 +99,14 @@ docker pull nats:latest
 docker run -p 4222:4222 -ti nats:latest
 ```
 
-Second, build and start the [cc-metric-collector](https://github.com/ClusterCockpit/cc-metric-collector) using the following as `config.json`:
+Second, build and start the [cc-metric-collector](https://github.com/ClusterCockpit/cc-metric-collector) using the following as Sink-Config:
 
 ```json
 {
-    "sink": {
-        "type": "nats",
-        "host": "localhost",
-        "port": "4222",
-        "database": "updates"
-    },
-    "interval" : 3,
-    "duration" : 1,
-    "collectors": [ "likwid", "loadavg" ],
-    "default_tags": { "cluster": "testcluster" },
-    "receiver": { "type": "none" }
+  "type": "nats",
+  "host": "localhost",
+  "port": "4222",
+  "database": "updates"
 }
 ```
 

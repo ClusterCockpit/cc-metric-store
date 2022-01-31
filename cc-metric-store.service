@@ -1,0 +1,17 @@
+[Unit]
+Description=ClusterCockpit In-Memory Timeseries Database (cc-metric-store)
+Documentation=https://github.com/ClusterCockpit/cc-metric-store
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+EnvironmentFile=/etc/default/cc-metric-store
+Type=simple
+User=clustercockpit
+Group=clustercockpit
+Restart=on-failure
+TimeoutStopSec=100
+ExecStart=/usr/bin/cc-metric-store --config ${CONF_FILE}
+
+[Install]
+WantedBy=multi-user.target
