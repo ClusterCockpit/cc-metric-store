@@ -114,5 +114,5 @@ func (l *level) findBuffers(selector Selector, offset int, f func(b *buffer) err
 		return nil
 	}
 
-	panic("impossible")
+	return nil
 }

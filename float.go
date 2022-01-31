@@ -46,11 +46,16 @@ type FloatArray []Float
 func (fa FloatArray) MarshalJSON() ([]byte, error) {
 	buf := make([]byte, 0, 2+len(fa)*8)
 	buf = append(buf, '[')
-	if len(fa) > 0 {
-		buf = strconv.AppendFloat(buf, float64(fa[0]), 'f', 1, 32)
-		for i := 1; i < len(fa); i++ {
+	for i := 0; i < len(fa); i++ {
+		if i != 0 {
 			buf = append(buf, ',')
+		}
+
+		if fa[i].IsNaN() {
+			buf = append(buf, `null`...)
+		} else {
 			buf = strconv.AppendFloat(buf, float64(fa[i]), 'f', 1, 32)
+
 		}
 	}
 	buf = append(buf, ']')

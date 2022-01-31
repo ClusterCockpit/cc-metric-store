@@ -129,7 +129,7 @@ JWT="eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSJ9.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlcyI6WyJST0
 # If the collector and store and nats-server have been running for at least 60 seconds on the same host, you may run:
 curl -H "Authorization: Bearer $JWT" -D - "http://localhost:8080/api/query" -d "{ \"cluster\": \"testcluster\", \"from\": $(expr $(date +%s) - 60), \"to\": $(date +%s), \"queries\": [{
   \"metric\": \"load_one\",
-  \"hostname\": \"$(hostname)\"
+  \"host\": \"$(hostname)\"
 }] }"
 
 # ...

@@ -157,7 +157,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	restoreFrom := startupTime.Add(d)
+	restoreFrom := startupTime.Add(-d)
 	log.Printf("Loading checkpoints newer than %s\n", restoreFrom.Format(time.RFC3339))
 	files, err := memoryStore.FromCheckpoint(conf.Checkpoints.RootDir, restoreFrom.Unix())
 	if err != nil {
