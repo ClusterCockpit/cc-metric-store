@@ -22,17 +22,17 @@ type MetricConfig struct {
 
 type Config struct {
 	Metrics           map[string]MetricConfig `json:"metrics"`
-	RetentionInMemory int                     `json:"retention-in-memory"`
+	RetentionInMemory string                  `json:"retention-in-memory"`
 	Nats              string                  `json:"nats"`
 	JwtPublicKey      string                  `json:"jwt-public-key"`
 	HttpApiAddress    string                  `json:"http-api-address"`
 	Checkpoints       struct {
-		Interval int    `json:"interval"`
+		Interval string `json:"interval"`
 		RootDir  string `json:"directory"`
-		Restore  int    `json:"restore"`
+		Restore  string `json:"restore"`
 	} `json:"checkpoints"`
 	Archive struct {
-		Interval int    `json:"interval"`
+		Interval string `json:"interval"`
 		RootDir  string `json:"directory"`
 	} `json:"archive"`
 }
@@ -57,10 +57,14 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 	wg.Add(3)
 	go func() {
 		defer wg.Done()
-		d := time.Duration(conf.RetentionInMemory) * time.Second
+		d, err := time.ParseDuration(conf.RetentionInMemory)
+		if err != nil {
+			log.Fatal(err)
+		}
 		if d <= 0 {
 			return
 		}
+
 		ticks := time.Tick(d / 2)
 		for {
 			select {
@@ -82,10 +86,14 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 	lastCheckpoint = time.Now()
 	go func() {
 		defer wg.Done()
-		d := time.Duration(conf.Checkpoints.Interval) * time.Second
+		d, err := time.ParseDuration(conf.Checkpoints.Interval)
+		if err != nil {
+			log.Fatal(err)
+		}
 		if d <= 0 {
 			return
 		}
+
 		ticks := time.Tick(d)
 		for {
 			select {
@@ -108,10 +116,14 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 
 	go func() {
 		defer wg.Done()
-		d := time.Duration(conf.Archive.Interval) * time.Second
+		d, err := time.ParseDuration(conf.Archive.Interval)
+		if err != nil {
+			log.Fatal(err)
+		}
 		if d <= 0 {
 			return
 		}
+
 		ticks := time.Tick(d)
 		for {
 			select {
@@ -140,7 +152,12 @@ func main() {
 	conf = loadConfiguration(configFile)
 	memoryStore = NewMemoryStore(conf.Metrics)
 
-	restoreFrom := startupTime.Add(-time.Duration(conf.Checkpoints.Restore) * time.Second)
+	d, err := time.ParseDuration(conf.Checkpoints.Restore)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	restoreFrom := startupTime.Add(d)
 	log.Printf("Loading checkpoints newer than %s\n", restoreFrom.Format(time.RFC3339))
 	files, err := memoryStore.FromCheckpoint(conf.Checkpoints.RootDir, restoreFrom.Unix())
 	if err != nil {
