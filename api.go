@@ -56,6 +56,25 @@ func (data *ApiMetricData) AddStats() {
 	}
 }
 
+func (data *ApiMetricData) PadDataWithNull(from, to int64, metric string) {
+	minfo, ok := memoryStore.metrics[metric]
+	if !ok {
+		return
+	}
+
+	if (data.From / minfo.frequency) > (from / minfo.frequency) {
+		padfront := int((data.From / minfo.frequency) - (from / minfo.frequency))
+		ndata := make([]Float, 0, padfront+len(data.Data))
+		for i := 0; i < padfront; i++ {
+			ndata = append(ndata, NaN)
+		}
+		for j := 0; j < len(data.Data); j++ {
+			ndata = append(ndata, data.Data[j])
+		}
+		data.Data = ndata
+	}
+}
+
 func handleFree(rw http.ResponseWriter, r *http.Request) {
 	rawTo := r.URL.Query().Get("to")
 	if rawTo == "" {
@@ -130,6 +149,7 @@ type ApiQueryRequest struct {
 	To          int64      `json:"to"`
 	WithStats   bool       `json:"with-stats"`
 	WithData    bool       `json:"with-data"`
+	WithPadding bool       `json:"with-padding"`
 	Queries     []ApiQuery `json:"queries"`
 	ForAllNodes []string   `json:"for-all-nodes"`
 }
@@ -223,6 +243,9 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 
 			if req.WithStats {
 				data.AddStats()
+			}
+			if req.WithPadding {
+				data.PadDataWithNull(req.From, req.To, query.Metric)
 			}
 			if !req.WithData {
 				data.Data = nil
