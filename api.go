@@ -154,6 +154,11 @@ type ApiQueryRequest struct {
 	ForAllNodes []string   `json:"for-all-nodes"`
 }
 
+type ApiQueryResponse struct {
+	Queries []ApiQuery        `json:"queries,omitempty"`
+	Results [][]ApiMetricData `json:"results"`
+}
+
 type ApiQuery struct {
 	Metric     string  `json:"metric"`
 	Hostname   string  `json:"host"`
@@ -172,19 +177,23 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	response := ApiQueryResponse{
+		Results: make([][]ApiMetricData, 0, len(req.Queries)),
+	}
 	if req.ForAllNodes != nil {
 		nodes := memoryStore.ListChildren([]string{req.Cluster})
 		for _, node := range nodes {
 			for _, metric := range req.ForAllNodes {
-				req.Queries = append(req.Queries, ApiQuery{
+				q := ApiQuery{
 					Metric:   metric,
 					Hostname: node,
-				})
+				}
+				req.Queries = append(req.Queries, q)
+				response.Queries = append(response.Queries, q)
 			}
 		}
 	}
 
-	response := make([][]ApiMetricData, 0, len(req.Queries))
 	for _, query := range req.Queries {
 		sels := make([]Selector, 0, 1)
 		if query.Aggregate || query.Type == nil {
@@ -252,7 +261,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 			}
 			res = append(res, data)
 		}
-		response = append(response, res)
+		response.Results = append(response.Results, res)
 	}
 
 	rw.Header().Set("Content-Type", "application/json")

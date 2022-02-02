@@ -60,26 +60,31 @@ paths:
           content:
             'application/json':
               schema:
-                description: 'Array where each element is a response to the query at that same index in the request'
-                type: array
-                items:
-                  description: 'If `aggreg` is true, only ever has one element.'
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      error:
-                        description: 'If not null or undefined, an error happend processing that query'
-                        type: string
-                        nullable: true
-                      data:
-                        type: array
-                        items:
-                          type: number
-                          nullable: true
-                      avg: { type: number }
-                      min: { type: number }
-                      max: { type: number }
+                type: object
+                properties:
+                  queries:
+                    description: 'Only if for-all-nodes was used, this property exists.'
+                  results:
+                    type: array
+                    description: 'Array where each element is a response to the query at that same index in the request'
+                    items:
+                      description: 'If `aggreg` is true, only ever has one element.'
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          error:
+                            description: 'If not null or undefined, an error happend processing that query'
+                            type: string
+                            nullable: true
+                          data:
+                            type: array
+                            items:
+                              type: number
+                              nullable: true
+                          avg: { type: number }
+                          min: { type: number }
+                          max: { type: number }
         400:
           description: 'Bad Request'
   '/api/free':
