@@ -171,7 +171,7 @@ type ApiQuery struct {
 
 func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	var err error
-	var req ApiQueryRequest = ApiQueryRequest{WithStats: true, WithData: true}
+	var req ApiQueryRequest = ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
@@ -240,13 +240,18 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// log.Printf("query: %#v\n", query)
+		// log.Printf("sels: %#v\n", sels)
+
 		res := make([]ApiMetricData, 0, len(sels))
 		for _, sel := range sels {
 			data := ApiMetricData{}
 			data.Data, data.From, data.To, err = memoryStore.Read(sel, query.Metric, req.From, req.To)
+			// log.Printf("data: %#v, %#v, %#v, %#v", data.Data, data.From, data.To, err)
 			if err != nil {
 				msg := err.Error()
 				data.Error = &msg
+				res = append(res, data)
 				continue
 			}
 
