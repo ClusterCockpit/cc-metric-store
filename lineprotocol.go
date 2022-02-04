@@ -21,7 +21,12 @@ type Metric struct {
 // function. handleLine will be called for each line recieved via nats.
 // Send `true` through the done channel for gracefull termination.
 func ReceiveNats(conf *NatsConfig, handleLine func(dec *lineprotocol.Decoder) error, workers int, ctx context.Context) error {
-	nc, err := nats.Connect(conf.Address)
+	var opts []nats.Option
+	if conf.Username != "" && conf.Password != "" {
+		opts = append(opts, nats.UserInfo(conf.Username, conf.Password))
+	}
+
+	nc, err := nats.Connect(conf.Address, opts...)
 	if err != nil {
 		return err
 	}
@@ -48,11 +53,11 @@ func ReceiveNats(conf *NatsConfig, handleLine func(dec *lineprotocol.Decoder) er
 			}()
 		}
 
-		sub, err = nc.Subscribe("updates", func(m *nats.Msg) {
+		sub, err = nc.Subscribe(conf.SubscribeTo, func(m *nats.Msg) {
 			msgs <- m
 		})
 	} else {
-		sub, err = nc.Subscribe("updates", func(m *nats.Msg) {
+		sub, err = nc.Subscribe(conf.SubscribeTo, func(m *nats.Msg) {
 			dec := lineprotocol.NewDecoderWithBytes(m.Data)
 			if err := handleLine(dec); err != nil {
 				log.Printf("error: %s\n", err.Error())
@@ -64,7 +69,7 @@ func ReceiveNats(conf *NatsConfig, handleLine func(dec *lineprotocol.Decoder) er
 		return err
 	}
 
-	log.Printf("NATS subscription to 'updates' on '%s' established\n", conf.Address)
+	log.Printf("NATS subscription to '%s' on '%s' established\n", conf.SubscribeTo, conf.Address)
 
 	<-ctx.Done()
 	err = sub.Unsubscribe()

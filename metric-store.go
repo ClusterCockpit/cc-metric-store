@@ -39,6 +39,13 @@ type HttpConfig struct {
 type NatsConfig struct {
 	// Address of the nats server
 	Address string `json:"address"`
+
+	// Channel name
+	SubscribeTo string `json:"subscribe-to"`
+
+	// Username/Password, optional
+	Username string `json:"username"`
+	Password string `json:"password"`
 }
 
 type Config struct {

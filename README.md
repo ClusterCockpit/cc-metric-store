@@ -76,9 +76,11 @@ All durations are specified as string that will be parsed [like this](https://pk
     - `scope`: Unused at the moment, should be something like `"node"`, `"socket"` or `"hwthread"`
 - `nats`:
     - `address`: Url of NATS.io server, example: "nats://localhost:4222"
+    - `username` and `password`: Optional, if provided use those for the connection
+    - `subscribe-to`: Where to expect the measurements to be published
 - `http-api`:
     - `address`: Address to bind to, for example `0.0.0.0:8080`
-    - `https-cert-file` and `https-key-file`: Optional, if provided enable HTTPS using those files as certificate/key.
+    - `https-cert-file` and `https-key-file`: Optional, if provided enable HTTPS using those files as certificate/key
 - `jwt-public-key`: Base64 encoded string, use this to verify requests to the HTTP API
 - `retention-on-memory`: Keep all values in memory for at least that amount of time
 - `checkpoints`:
