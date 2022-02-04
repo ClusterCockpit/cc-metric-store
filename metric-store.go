@@ -20,12 +20,18 @@ type MetricConfig struct {
 	Scope       string `json:"scope"`
 }
 
+type HttpsConfig struct {
+	CertFile string `json:"cert"`
+	KeyFile  string `json:"key"`
+}
+
 type Config struct {
 	Metrics           map[string]MetricConfig `json:"metrics"`
 	RetentionInMemory string                  `json:"retention-in-memory"`
 	Nats              string                  `json:"nats"`
 	JwtPublicKey      string                  `json:"jwt-public-key"`
 	HttpApiAddress    string                  `json:"http-api-address"`
+	HttpsConfig       *HttpsConfig            `json:"https"`
 	Checkpoints       struct {
 		Interval string `json:"interval"`
 		RootDir  string `json:"directory"`
@@ -189,7 +195,7 @@ func main() {
 	wg.Add(1)
 
 	go func() {
-		err := StartApiServer(conf.HttpApiAddress, ctx)
+		err := StartApiServer(ctx, conf.HttpApiAddress, conf.HttpsConfig)
 		if err != nil {
 			log.Fatal(err)
 		}

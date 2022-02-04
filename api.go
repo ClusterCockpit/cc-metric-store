@@ -307,12 +307,18 @@ func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler
 	})
 }
 
-func StartApiServer(address string, ctx context.Context) error {
+func StartApiServer(ctx context.Context, address string, httpsConfig *HttpsConfig) error {
 	r := mux.NewRouter()
 
 	r.HandleFunc("/api/free", handleFree)
 	r.HandleFunc("/api/write", handleWrite)
 	r.HandleFunc("/api/query", handleQuery)
+	r.HandleFunc("/api/debug", func(rw http.ResponseWriter, r *http.Request) {
+		bw := bufio.NewWriter(rw)
+		defer bw.Flush()
+
+		memoryStore.DebugDump(bw)
+	})
 
 	server := &http.Server{
 		Handler:      r,
@@ -331,10 +337,18 @@ func StartApiServer(address string, ctx context.Context) error {
 	}
 
 	go func() {
-		log.Printf("API http endpoint listening on '%s'\n", address)
-		err := server.ListenAndServe()
-		if err != nil && err != http.ErrServerClosed {
-			log.Println(err)
+		if httpsConfig != nil {
+			log.Printf("API https endpoint listening on '%s'\n", address)
+			err := server.ListenAndServeTLS(httpsConfig.CertFile, httpsConfig.KeyFile)
+			if err != nil && err != http.ErrServerClosed {
+				log.Println(err)
+			}
+		} else {
+			log.Printf("API http endpoint listening on '%s'\n", address)
+			err := server.ListenAndServe()
+			if err != nil && err != http.ErrServerClosed {
+				log.Println(err)
+			}
 		}
 	}()
 
