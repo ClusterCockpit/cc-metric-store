@@ -307,7 +307,7 @@ func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler
 	})
 }
 
-func StartApiServer(ctx context.Context, address string, httpsConfig *HttpsConfig) error {
+func StartApiServer(ctx context.Context, httpConfig *HttpConfig) error {
 	r := mux.NewRouter()
 
 	r.HandleFunc("/api/free", handleFree)
@@ -322,7 +322,7 @@ func StartApiServer(ctx context.Context, address string, httpsConfig *HttpsConfi
 
 	server := &http.Server{
 		Handler:      r,
-		Addr:         address,
+		Addr:         httpConfig.Address,
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
 	}
@@ -337,14 +337,14 @@ func StartApiServer(ctx context.Context, address string, httpsConfig *HttpsConfi
 	}
 
 	go func() {
-		if httpsConfig != nil {
-			log.Printf("API https endpoint listening on '%s'\n", address)
-			err := server.ListenAndServeTLS(httpsConfig.CertFile, httpsConfig.KeyFile)
+		if httpConfig.CertFile != "" && httpConfig.KeyFile != "" {
+			log.Printf("API https endpoint listening on '%s'\n", httpConfig.Address)
+			err := server.ListenAndServeTLS(httpConfig.CertFile, httpConfig.KeyFile)
 			if err != nil && err != http.ErrServerClosed {
 				log.Println(err)
 			}
 		} else {
-			log.Printf("API http endpoint listening on '%s'\n", address)
+			log.Printf("API http endpoint listening on '%s'\n", httpConfig.Address)
 			err := server.ListenAndServe()
 			if err != nil && err != http.ErrServerClosed {
 				log.Println(err)

@@ -15,23 +15,38 @@ import (
 )
 
 type MetricConfig struct {
-	Frequency   int64  `json:"frequency"`
+	// Interval in seconds at which measurements will arive.
+	Frequency int64 `json:"frequency"`
+
+	// Can be 'sum', 'avg' or null. Describes how to aggregate metrics from the same timestep over the hierarchy.
 	Aggregation string `json:"aggregation"`
-	Scope       string `json:"scope"`
+
+	// Unused for now.
+	Scope string `json:"scope"`
 }
 
-type HttpsConfig struct {
-	CertFile string `json:"cert"`
-	KeyFile  string `json:"key"`
+type HttpConfig struct {
+	// Address to bind to, for example "0.0.0.0:8081"
+	Address string `json:"address"`
+
+	// If not the empty string, use https with this as the certificate file
+	CertFile string `json:"https-cert-file"`
+
+	// If not the empty string, use https with this as the key file
+	KeyFile string `json:"https-key-file"`
+}
+
+type NatsConfig struct {
+	// Address of the nats server
+	Address string `json:"address"`
 }
 
 type Config struct {
 	Metrics           map[string]MetricConfig `json:"metrics"`
 	RetentionInMemory string                  `json:"retention-in-memory"`
-	Nats              string                  `json:"nats"`
+	Nats              *NatsConfig             `json:"nats"`
 	JwtPublicKey      string                  `json:"jwt-public-key"`
-	HttpApiAddress    string                  `json:"http-api-address"`
-	HttpsConfig       *HttpsConfig            `json:"https"`
+	HttpConfig        *HttpConfig             `json:"http-api"`
 	Checkpoints       struct {
 		Interval string `json:"interval"`
 		RootDir  string `json:"directory"`
@@ -195,14 +210,14 @@ func main() {
 	wg.Add(1)
 
 	go func() {
-		err := StartApiServer(ctx, conf.HttpApiAddress, conf.HttpsConfig)
+		err := StartApiServer(ctx, conf.HttpConfig)
 		if err != nil {
 			log.Fatal(err)
 		}
 		wg.Done()
 	}()
 
-	if len(conf.Nats) != 0 {
+	if conf.Nats != nil {
 		wg.Add(1)
 
 		go func() {

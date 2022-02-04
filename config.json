@@ -15,8 +15,12 @@
         "interval": "168h",
         "directory": "./var/archive"
     },
+    "http-api": {
+        "address": "0.0.0.0:8081",
+        "https-cert-file": null,
+        "https-key-file": null
+    },
     "retention-in-memory": "48h",
-    "http-api-address": "0.0.0.0:8081",
     "nats": null,
     "jwt-public-key": "kzfYrYy+TzpanWZHJ5qSdMj5uKUWgq74BWhQG6copP0="
 }

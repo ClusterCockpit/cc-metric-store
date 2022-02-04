@@ -20,8 +20,8 @@ type Metric struct {
 // Connect to a nats server and subscribe to "updates". This is a blocking
 // function. handleLine will be called for each line recieved via nats.
 // Send `true` through the done channel for gracefull termination.
-func ReceiveNats(address string, handleLine func(dec *lineprotocol.Decoder) error, workers int, ctx context.Context) error {
-	nc, err := nats.Connect(address)
+func ReceiveNats(conf *NatsConfig, handleLine func(dec *lineprotocol.Decoder) error, workers int, ctx context.Context) error {
+	nc, err := nats.Connect(conf.Address)
 	if err != nil {
 		return err
 	}
@@ -64,7 +64,7 @@ func ReceiveNats(address string, handleLine func(dec *lineprotocol.Decoder) erro
 		return err
 	}
 
-	log.Printf("NATS subscription to 'updates' on '%s' established\n", address)
+	log.Printf("NATS subscription to 'updates' on '%s' established\n", conf.Address)
 
 	<-ctx.Done()
 	err = sub.Unsubscribe()
