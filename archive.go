@@ -53,7 +53,7 @@ func (m *MemoryStore) ToCheckpoint(dir string, from, to int64) (int, error) {
 	}
 	m.root.lock.RUnlock()
 
-	n := 0
+	n, errs := 0, 0
 	for i := 0; i < len(levels); i++ {
 		dir := path.Join(dir, path.Join(selectors[i]...))
 		err := levels[i].toCheckpoint(dir, from, to, m)
@@ -62,12 +62,17 @@ func (m *MemoryStore) ToCheckpoint(dir string, from, to int64) (int, error) {
 				continue
 			}
 
-			return i, err
+			log.Printf("checkpointing %#v failed: %s", selectors[i], err.Error())
+			errs += 1
+			continue
 		}
 
 		n += 1
 	}
 
+	if errs > 0 {
+		return n, fmt.Errorf("%d errors happend while creating checkpoints (%d successes)", errs, n)
+	}
 	return n, nil
 }
 
@@ -211,6 +216,7 @@ func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
 	}()
 
 	loadedFiles := int32(0)
+	errors := int32(0)
 
 	for worker := 0; worker < workers; worker++ {
 		go func() {
@@ -220,6 +226,8 @@ func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
 				n, err := lvl.fromCheckpoint(filepath.Join(dir, host[0], host[1]), from, m)
 				if err != nil {
 					log.Fatalf("error while loading checkpoints: %s", err.Error())
+					atomic.AddInt32(&errors, int32(n))
+					continue
 				}
 				atomic.AddInt32(&loadedFiles, int32(n))
 			}
@@ -227,13 +235,16 @@ func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
 	}
 
 	wg.Wait()
-	var err error = nil
 	select {
-	case e := <-errs:
-		err = e
+	case err := <-errs:
+		return int(loadedFiles), err
 	default:
 	}
-	return int(loadedFiles), err
+
+	if errors > 0 {
+		return int(loadedFiles), fmt.Errorf("%d errors happend while creating checkpoints (%d successes)", errors, loadedFiles)
+	}
+	return int(loadedFiles), nil
 }
 
 func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
