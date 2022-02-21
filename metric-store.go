@@ -5,13 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/google/gops/agent"
 )
 
 type MetricConfig struct {
@@ -20,9 +21,6 @@ type MetricConfig struct {
 
 	// Can be 'sum', 'avg' or null. Describes how to aggregate metrics from the same timestep over the hierarchy.
 	Aggregation string `json:"aggregation"`
-
-	// Unused for now.
-	Scope string `json:"scope"`
 }
 
 type HttpConfig struct {
@@ -73,11 +71,14 @@ func loadConfiguration(file string) Config {
 	var config Config
 	configFile, err := os.Open(file)
 	if err != nil {
-		fmt.Println(err.Error())
+		log.Fatal(err)
 	}
 	defer configFile.Close()
-	jsonParser := json.NewDecoder(configFile)
-	jsonParser.Decode(&config)
+	dec := json.NewDecoder(configFile)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&config); err != nil {
+		log.Fatal(err)
+	}
 	return config
 }
 
@@ -173,8 +174,16 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 
 func main() {
 	var configFile string
+	var enableGopsAgent bool
 	flag.StringVar(&configFile, "config", "./config.json", "configuration file")
+	flag.BoolVar(&enableGopsAgent, "gops", false, "Listen via github.com/google/gops/agent")
 	flag.Parse()
+
+	if enableGopsAgent {
+		if err := agent.Listen(agent.Options{}); err != nil {
+			log.Fatal(err)
+		}
+	}
 
 	startupTime := time.Now()
 	conf = loadConfiguration(configFile)

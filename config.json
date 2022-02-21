@@ -1,10 +1,11 @@
 {
     "metrics": {
-        "flops_any":  { "frequency": 15, "aggregation": "sum", "scope": "cpu" },
-        "flops_dp":   { "frequency": 15, "aggregation": "sum", "scope": "cpu" },
-        "flops_sp":   { "frequency": 15, "aggregation": "sum", "scope": "cpu" },
-        "mem_bw":     { "frequency": 15, "aggregation": "sum", "scope": "socket" },
-        "load_one":   { "frequency": 15, "aggregation": null,  "scope": "node" }
+        "flops_any":  { "frequency": 15, "aggregation": "sum" },
+        "flops_dp":   { "frequency": 15, "aggregation": "sum" },
+        "flops_sp":   { "frequency": 15, "aggregation": "sum" },
+        "mem_bw":     { "frequency": 15, "aggregation": "sum" },
+        "load_one":   { "frequency": 15, "aggregation": null  },
+        "load_five":  { "frequency": 15, "aggregation": null  }
     },
     "checkpoints": {
         "interval": "12h",
