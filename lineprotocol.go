@@ -20,7 +20,7 @@ type Metric struct {
 // Connect to a nats server and subscribe to "updates". This is a blocking
 // function. handleLine will be called for each line recieved via nats.
 // Send `true` through the done channel for gracefull termination.
-func ReceiveNats(conf *NatsConfig, handleLine func(dec *lineprotocol.Decoder) error, workers int, ctx context.Context) error {
+func ReceiveNats(conf *NatsConfig, handleLine func(*lineprotocol.Decoder, string) error, workers int, ctx context.Context) error {
 	var opts []nats.Option
 	if conf.Username != "" && conf.Password != "" {
 		opts = append(opts, nats.UserInfo(conf.Username, conf.Password))
@@ -44,7 +44,7 @@ func ReceiveNats(conf *NatsConfig, handleLine func(dec *lineprotocol.Decoder) er
 			go func() {
 				for m := range msgs {
 					dec := lineprotocol.NewDecoderWithBytes(m.Data)
-					if err := handleLine(dec); err != nil {
+					if err := handleLine(dec, conf.ClusterTag); err != nil {
 						log.Printf("error: %s\n", err.Error())
 					}
 				}
@@ -59,7 +59,7 @@ func ReceiveNats(conf *NatsConfig, handleLine func(dec *lineprotocol.Decoder) er
 	} else {
 		sub, err = nc.Subscribe(conf.SubscribeTo, func(m *nats.Msg) {
 			dec := lineprotocol.NewDecoderWithBytes(m.Data)
-			if err := handleLine(dec); err != nil {
+			if err := handleLine(dec, conf.ClusterTag); err != nil {
 				log.Printf("error: %s\n", err.Error())
 			}
 		})
@@ -104,7 +104,9 @@ func reorder(buf, prefix []byte) []byte {
 	}
 }
 
-func decodeLine(dec *lineprotocol.Decoder) error {
+// Decode lines using dec and make write calls to the MemoryStore.
+// If a line is missing its cluster tag, use clusterDefault as default.
+func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 	// Reduce allocations in loop:
 	t := time.Now()
 	metrics := make([]Metric, 0, 10)
@@ -138,7 +140,7 @@ func decodeLine(dec *lineprotocol.Decoder) error {
 		}
 
 		typeBuf, subTypeBuf := typeBuf[:0], subTypeBuf[:0]
-		var cluster, host string
+		cluster, host := clusterDefault, ""
 		for {
 			key, val, err := dec.NextTag()
 			if err != nil {

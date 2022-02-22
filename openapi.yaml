@@ -10,6 +10,11 @@ paths:
     post:
       operationId: 'writeMetrics'
       description: 'Recieves metrics in the influx line-protocol using [this format](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md)'
+      parameters:
+        - name: cluster
+          in: query
+          schema: { type: string }
+          description: "If the lines in the body do not have a cluster tag, use this value instead."
       requestBody:
         required: true
         content:

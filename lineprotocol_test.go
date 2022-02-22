@@ -10,7 +10,7 @@ import (
 const TestDataClassicFormat string = `
 m1,cluster=ctest,hostname=htest1,type=node value=1 123456789
 m2,cluster=ctest,hostname=htest1,type=node value=2 123456789
-m3,cluster=ctest,hostname=htest2,type=node value=3 123456789
+m3,hostname=htest2,type=node value=3 123456789
 m4,cluster=ctest,hostname=htest2,type=core,type-id=1 value=4 123456789
 m4,cluster=ctest,hostname=htest2,type-id=2,type=core value=5 123456789
 `
@@ -29,7 +29,7 @@ func TestLineprotocolDecoder(t *testing.T) {
 	})
 
 	dec := lineprotocol.NewDecoderWithBytes([]byte(TestDataClassicFormat))
-	if err := decodeLine(dec); err != nil {
+	if err := decodeLine(dec, "ctest"); err != nil {
 		log.Fatal(err)
 	}
 

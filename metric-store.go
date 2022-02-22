@@ -41,6 +41,9 @@ type NatsConfig struct {
 	// Channel name
 	SubscribeTo string `json:"subscribe-to"`
 
+	// Allow lines without a cluster tag, use this as default, optional
+	ClusterTag string `json:"cluster-tag"`
+
 	// Username/Password, optional
 	Username string `json:"username"`
 	Password string `json:"password"`

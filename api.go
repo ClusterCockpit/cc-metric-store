@@ -136,7 +136,7 @@ func handleWrite(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	dec := lineprotocol.NewDecoderWithBytes(bytes)
-	if err := decodeLine(dec); err != nil {
+	if err := decodeLine(dec, r.URL.Query().Get("cluster")); err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
 	}
