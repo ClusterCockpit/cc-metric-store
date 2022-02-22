@@ -77,7 +77,9 @@ All durations are specified as string that will be parsed [like this](https://pk
 - `nats`:
     - `address`: Url of NATS.io server, example: "nats://localhost:4222"
     - `username` and `password`: Optional, if provided use those for the connection
-    - `subscribe-to`: Where to expect the measurements to be published
+    - `subscriptions`:
+        - `subscribe-to`: Where to expect the measurements to be published
+        - `cluster-tag`: Default value for the cluster tag
 - `http-api`:
     - `address`: Address to bind to, for example `0.0.0.0:8080`
     - `https-cert-file` and `https-key-file`: Optional, if provided enable HTTPS using those files as certificate/key

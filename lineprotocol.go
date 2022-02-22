@@ -33,52 +33,57 @@ func ReceiveNats(conf *NatsConfig, handleLine func(*lineprotocol.Decoder, string
 	defer nc.Close()
 
 	var wg sync.WaitGroup
-	var sub *nats.Subscription
+	var subs []*nats.Subscription
 
 	msgs := make(chan *nats.Msg, workers*2)
 
-	if workers > 1 {
-		wg.Add(workers)
+	for _, sc := range conf.Subscriptions {
+		clusterTag := sc.ClusterTag
+		var sub *nats.Subscription
+		if workers > 1 {
+			wg.Add(workers)
 
-		for i := 0; i < workers; i++ {
-			go func() {
-				for m := range msgs {
-					dec := lineprotocol.NewDecoderWithBytes(m.Data)
-					if err := handleLine(dec, conf.ClusterTag); err != nil {
-						log.Printf("error: %s\n", err.Error())
+			for i := 0; i < workers; i++ {
+				go func() {
+					for m := range msgs {
+						dec := lineprotocol.NewDecoderWithBytes(m.Data)
+						if err := handleLine(dec, clusterTag); err != nil {
+							log.Printf("error: %s\n", err.Error())
+						}
 					}
-				}
 
-				wg.Done()
-			}()
+					wg.Done()
+				}()
+			}
+
+			sub, err = nc.Subscribe(sc.SubscribeTo, func(m *nats.Msg) {
+				msgs <- m
+			})
+		} else {
+			sub, err = nc.Subscribe(sc.SubscribeTo, func(m *nats.Msg) {
+				dec := lineprotocol.NewDecoderWithBytes(m.Data)
+				if err := handleLine(dec, clusterTag); err != nil {
+					log.Printf("error: %s\n", err.Error())
+				}
+			})
 		}
 
-		sub, err = nc.Subscribe(conf.SubscribeTo, func(m *nats.Msg) {
-			msgs <- m
-		})
-	} else {
-		sub, err = nc.Subscribe(conf.SubscribeTo, func(m *nats.Msg) {
-			dec := lineprotocol.NewDecoderWithBytes(m.Data)
-			if err := handleLine(dec, conf.ClusterTag); err != nil {
-				log.Printf("error: %s\n", err.Error())
-			}
-		})
+		if err != nil {
+			return err
+		}
+		log.Printf("NATS subscription to '%s' on '%s' established\n", sc.SubscribeTo, conf.Address)
+		subs = append(subs, sub)
 	}
-
-	if err != nil {
-		return err
-	}
-
-	log.Printf("NATS subscription to '%s' on '%s' established\n", conf.SubscribeTo, conf.Address)
 
 	<-ctx.Done()
-	err = sub.Unsubscribe()
+	for _, sub := range subs {
+		err = sub.Unsubscribe()
+		if err != nil {
+			log.Printf("NATS unsubscribe failed: %s", err.Error())
+		}
+	}
 	close(msgs)
 	wg.Wait()
-
-	if err != nil {
-		return err
-	}
 
 	nc.Close()
 	log.Println("NATS connection closed")

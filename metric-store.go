@@ -38,21 +38,23 @@ type NatsConfig struct {
 	// Address of the nats server
 	Address string `json:"address"`
 
-	// Channel name
-	SubscribeTo string `json:"subscribe-to"`
-
-	// Allow lines without a cluster tag, use this as default, optional
-	ClusterTag string `json:"cluster-tag"`
-
 	// Username/Password, optional
 	Username string `json:"username"`
 	Password string `json:"password"`
+
+	Subscriptions []struct {
+		// Channel name
+		SubscribeTo string `json:"subscribe-to"`
+
+		// Allow lines without a cluster tag, use this as default, optional
+		ClusterTag string `json:"cluster-tag"`
+	} `json:"subscriptions"`
 }
 
 type Config struct {
 	Metrics           map[string]MetricConfig `json:"metrics"`
 	RetentionInMemory string                  `json:"retention-in-memory"`
-	Nats              *NatsConfig             `json:"nats"`
+	Nats              []*NatsConfig           `json:"nats"`
 	JwtPublicKey      string                  `json:"jwt-public-key"`
 	HttpConfig        *HttpConfig             `json:"http-api"`
 	Checkpoints       struct {
@@ -237,17 +239,20 @@ func main() {
 	}()
 
 	if conf.Nats != nil {
-		wg.Add(1)
+		for _, natsConf := range conf.Nats {
+			// TODO: When multiple nats configs share a URL, do a single connect.
+			wg.Add(1)
+			nc := natsConf
+			go func() {
+				// err := ReceiveNats(conf.Nats, decodeLine, runtime.NumCPU()-1, ctx)
+				err := ReceiveNats(nc, decodeLine, 1, ctx)
 
-		go func() {
-			// err := ReceiveNats(conf.Nats, decodeLine, runtime.NumCPU()-1, ctx)
-			err := ReceiveNats(conf.Nats, decodeLine, 1, ctx)
-
-			if err != nil {
-				log.Fatal(err)
-			}
-			wg.Done()
-		}()
+				if err != nil {
+					log.Fatal(err)
+				}
+				wg.Done()
+			}()
+		}
 	}
 
 	wg.Wait()
