@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"net"
 	"sync"
 	"time"
 
@@ -13,8 +15,70 @@ import (
 
 type Metric struct {
 	Name  string
-	minfo metricInfo
 	Value Float
+
+	mc MetricConfig
+}
+
+// Currently unused, could be used to send messages via raw TCP.
+// Each connection is handled in it's own goroutine. This is a blocking function.
+func ReceiveRaw(ctx context.Context, listener net.Listener, handleLine func(*lineprotocol.Decoder, string) error) error {
+	var wg sync.WaitGroup
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		<-ctx.Done()
+		if err := listener.Close(); err != nil {
+			log.Printf("listener.Close(): %s", err.Error())
+		}
+	}()
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				break
+			}
+
+			log.Printf("listener.Accept(): %s", err.Error())
+		}
+
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			defer conn.Close()
+
+			dec := lineprotocol.NewDecoder(conn)
+			connctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go func() {
+				defer wg.Done()
+				select {
+				case <-connctx.Done():
+					conn.Close()
+				case <-ctx.Done():
+					conn.Close()
+				}
+			}()
+
+			if err := handleLine(dec, "default"); err != nil {
+				if errors.Is(err, net.ErrClosed) {
+					return
+				}
+
+				log.Printf("%s: %s", conn.RemoteAddr().String(), err.Error())
+				errmsg := make([]byte, 128)
+				errmsg = append(errmsg, `error: `...)
+				errmsg = append(errmsg, err.Error()...)
+				errmsg = append(errmsg, '\n')
+				conn.Write(errmsg)
+			}
+		}()
+	}
+
+	wg.Wait()
+	return nil
 }
 
 // Connect to a nats server and subscribe to "updates". This is a blocking

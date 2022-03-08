@@ -26,6 +26,9 @@ type CheckpointMetrics struct {
 	Data      []Float `json:"data"`
 }
 
+// As `Float` implements a custom MarshalJSON() function,
+// serializing an array of such types has more overhead
+// than one would assume (because of extra allocations, interfaces and so on).
 func (cm *CheckpointMetrics) MarshalJSON() ([]byte, error) {
 	buf := make([]byte, 0, 128+len(cm.Data)*8)
 	buf = append(buf, `{"frequency":`...)
@@ -224,7 +227,7 @@ func (l *level) toCheckpoint(dir string, from, to int64, m *MemoryStore) error {
 // Different host's data is loaded to memory in parallel.
 func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
 	var wg sync.WaitGroup
-	work := make(chan [2]string, NumWorkers)
+	work := make(chan [2]string, NumWorkers*2)
 	n, errs := int32(0), int32(0)
 
 	wg.Add(NumWorkers)
