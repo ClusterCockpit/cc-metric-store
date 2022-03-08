@@ -9,7 +9,7 @@ import (
 // This program uses NaN as a signal for missing data.
 // For the HTTP JSON API to be able to handle NaN values,
 // we have to use our own type which implements encoding/json.Marshaler itself.
-type Float float32
+type Float float64
 
 var NaN Float = Float(math.NaN())
 var nullAsBytes []byte = []byte("null")
