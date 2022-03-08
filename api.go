@@ -62,8 +62,8 @@ func (data *ApiMetricData) PadDataWithNull(from, to int64, metric string) {
 		return
 	}
 
-	if (data.From / minfo.frequency) > (from / minfo.frequency) {
-		padfront := int((data.From / minfo.frequency) - (from / minfo.frequency))
+	if (data.From / minfo.Frequency) > (from / minfo.Frequency) {
+		padfront := int((data.From / minfo.Frequency) - (from / minfo.Frequency))
 		ndata := make([]Float, 0, padfront+len(data.Data))
 		for i := 0; i < padfront; i++ {
 			ndata = append(ndata, NaN)
@@ -101,7 +101,7 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	bodyDec := json.NewDecoder(r.Body)
-	var selectors []Selector
+	var selectors [][]string
 	err = bodyDec.Decode(&selectors)
 	if err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
@@ -137,6 +137,7 @@ func handleWrite(rw http.ResponseWriter, r *http.Request) {
 
 	dec := lineprotocol.NewDecoderWithBytes(bytes)
 	if err := decodeLine(dec, r.URL.Query().Get("cluster")); err != nil {
+		log.Printf("/api/write error: %s", err.Error())
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -15,12 +16,43 @@ import (
 	"github.com/google/gops/agent"
 )
 
+// For aggregation over multiple values at different cpus/sockets/..., not time!
+type AggregationStrategy int
+
+const (
+	NoAggregation AggregationStrategy = iota
+	SumAggregation
+	AvgAggregation
+)
+
+func (as *AggregationStrategy) UnmarshalJSON(data []byte) error {
+	var str string
+	if err := json.Unmarshal(data, &str); err != nil {
+		return err
+	}
+
+	switch str {
+	case "":
+		*as = NoAggregation
+	case "sum":
+		*as = SumAggregation
+	case "avg":
+		*as = AvgAggregation
+	default:
+		return fmt.Errorf("invalid aggregation strategy: %#v", str)
+	}
+	return nil
+}
+
 type MetricConfig struct {
 	// Interval in seconds at which measurements will arive.
 	Frequency int64 `json:"frequency"`
 
 	// Can be 'sum', 'avg' or null. Describes how to aggregate metrics from the same timestep over the hierarchy.
-	Aggregation string `json:"aggregation"`
+	Aggregation AggregationStrategy `json:"aggregation"`
+
+	// Private, used internally...
+	offset int
 }
 
 type HttpConfig struct {
@@ -107,7 +139,7 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 			case <-ticks:
 				t := time.Now().Add(-d)
 				log.Printf("start freeing buffers (older than %s)...\n", t.Format(time.RFC3339))
-				freed, err := memoryStore.Free(Selector{}, t.Unix())
+				freed, err := memoryStore.Free(nil, t.Unix())
 				if err != nil {
 					log.Printf("freeing up buffers failed: %s\n", err.Error())
 				} else {

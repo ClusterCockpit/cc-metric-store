@@ -201,8 +201,8 @@ func TestMemoryStoreMissingDatapoints(t *testing.T) {
 func TestMemoryStoreAggregation(t *testing.T) {
 	count := 3000
 	store := NewMemoryStore(map[string]MetricConfig{
-		"a": {Frequency: 1, Aggregation: "sum"},
-		"b": {Frequency: 2, Aggregation: "avg"},
+		"a": {Frequency: 1, Aggregation: SumAggregation},
+		"b": {Frequency: 2, Aggregation: AvgAggregation},
 	})
 
 	for i := 0; i < count; i++ {
@@ -269,7 +269,7 @@ func TestMemoryStoreStats(t *testing.T) {
 	count := 3000
 	store := NewMemoryStore(map[string]MetricConfig{
 		"a": {Frequency: 1},
-		"b": {Frequency: 1, Aggregation: "avg"},
+		"b": {Frequency: 1, Aggregation: AvgAggregation},
 	})
 
 	sel1 := []string{"cluster", "host1"}
@@ -415,7 +415,7 @@ func TestMemoryStoreFree(t *testing.T) {
 		}
 	}
 
-	n, err := store.Free(Selector{{String: "cluster"}, {String: "host"}}, int64(BUFFER_CAP*2)+100)
+	n, err := store.Free([]string{"cluster", "host"}, int64(BUFFER_CAP*2)+100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +501,7 @@ func BenchmarkMemoryStoreAggregation(b *testing.B) {
 	b.StopTimer()
 	count := 2000
 	store := NewMemoryStore(map[string]MetricConfig{
-		"flops_any": {Frequency: 1, Aggregation: "avg"},
+		"flops_any": {Frequency: 1, Aggregation: AvgAggregation},
 	})
 
 	sel := []string{"testcluster", "host123", "cpu0"}

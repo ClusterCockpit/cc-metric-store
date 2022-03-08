@@ -114,9 +114,9 @@ func reorder(buf, prefix []byte) []byte {
 func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 	// Reduce allocations in loop:
 	t := time.Now()
-	metrics := make([]Metric, 0, 10)
+	metric, metricBuf := Metric{}, make([]byte, 0, 16)
 	selector := make([]string, 0, 4)
-	typeBuf, subTypeBuf := make([]byte, 0, 20), make([]byte, 0)
+	typeBuf, subTypeBuf := make([]byte, 0, 16), make([]byte, 0)
 
 	// Optimize for the case where all lines in a "batch" are about the same
 	// cluster and host. By using `WriteToLevel` (level = host), we do not need
@@ -124,24 +124,21 @@ func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 	var lvl *level = nil
 	var prevCluster, prevHost string = "", ""
 
+	var ok bool
 	for dec.Next() {
-		metrics = metrics[:0]
 		rawmeasurement, err := dec.Measurement()
 		if err != nil {
 			return err
 		}
 
-		// A more dense lp format if supported if the measurement is 'data'.
-		// In that case, the field keys are used as metric names.
-		if string(rawmeasurement) != "data" {
-			minfo, ok := memoryStore.metrics[string(rawmeasurement)]
-			if !ok {
-				continue
-			}
+		// Needs to be copied because another call to dec.* would
+		// invalidate the returned slice.
+		metricBuf = append(metricBuf[:0], rawmeasurement...)
 
-			metrics = append(metrics, Metric{
-				minfo: minfo,
-			})
+		// The go compiler optimizes map[string(byteslice)] lookups:
+		metric.mc, ok = memoryStore.metrics[string(rawmeasurement)]
+		if !ok {
+			continue
 		}
 
 		typeBuf, subTypeBuf := typeBuf[:0], subTypeBuf[:0]
@@ -176,6 +173,7 @@ func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 					break
 				}
 
+				// We cannot be sure that the "type" tag comes before the "type-id" tag:
 				if len(typeBuf) == 0 {
 					typeBuf = append(typeBuf, val...)
 				} else {
@@ -184,6 +182,7 @@ func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 			case "type-id":
 				typeBuf = append(typeBuf, val...)
 			case "subtype":
+				// We cannot be sure that the "subtype" tag comes before the "stype-id" tag:
 				if len(subTypeBuf) == 0 {
 					subTypeBuf = append(subTypeBuf, val...)
 				} else {
@@ -197,6 +196,7 @@ func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 			}
 		}
 
+		// If the cluster or host changed, the lvl was set to nil
 		if lvl == nil {
 			selector = selector[:2]
 			selector[0], selector[1] = cluster, host
@@ -204,6 +204,7 @@ func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 			prevCluster, prevHost = cluster, host
 		}
 
+		// subtypes:
 		selector = selector[:0]
 		if len(typeBuf) > 0 {
 			selector = append(selector, string(typeBuf)) // <- Allocation :(
@@ -212,71 +213,34 @@ func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 			}
 		}
 
-		if len(metrics) == 0 {
-			for {
-				key, val, err := dec.NextField()
-				if err != nil {
-					return err
-				}
-
-				if key == nil {
-					break
-				}
-
-				var value Float
-				if val.Kind() == lineprotocol.Float {
-					value = Float(val.FloatV())
-				} else if val.Kind() == lineprotocol.Int {
-					value = Float(val.IntV())
-				} else {
-					return fmt.Errorf("unsupported value type in message: %s", val.Kind().String())
-				}
-
-				minfo, ok := memoryStore.metrics[string(key)]
-				if !ok {
-					continue
-				}
-
-				metrics = append(metrics, Metric{
-					minfo: minfo,
-					Value: value,
-				})
-			}
-		} else {
-			var value Float
-			for {
-				key, val, err := dec.NextField()
-				if err != nil {
-					return err
-				}
-
-				if key == nil {
-					break
-				}
-
-				if string(key) != "value" {
-					return fmt.Errorf("unkown field: '%s' (value: %#v)", string(key), val)
-				}
-
-				if val.Kind() == lineprotocol.Float {
-					value = Float(val.FloatV())
-				} else if val.Kind() == lineprotocol.Int {
-					value = Float(val.IntV())
-				} else {
-					return fmt.Errorf("unsupported value type in message: %s", val.Kind().String())
-				}
+		for {
+			key, val, err := dec.NextField()
+			if err != nil {
+				return err
 			}
 
-			metrics[0].Value = value
+			if key == nil {
+				break
+			}
+
+			if string(key) != "value" {
+				return fmt.Errorf("unkown field: '%s' (value: %#v)", string(key), val)
+			}
+
+			if val.Kind() == lineprotocol.Float {
+				metric.Value = Float(val.FloatV())
+			} else if val.Kind() == lineprotocol.Int {
+				metric.Value = Float(val.IntV())
+			} else {
+				return fmt.Errorf("unsupported value type in message: %s", val.Kind().String())
+			}
 		}
 
-		t, err = dec.Time(lineprotocol.Second, t)
-		if err != nil {
+		if t, err = dec.Time(lineprotocol.Second, t); err != nil {
 			return err
 		}
 
-		// log.Printf("write: %s (%v) -> %v\n", string(measurement), selector, value)
-		if err := memoryStore.WriteToLevel(lvl, selector, t.Unix(), metrics); err != nil {
+		if err := memoryStore.WriteToLevel(lvl, selector, t.Unix(), []Metric{metric}); err != nil {
 			return err
 		}
 	}

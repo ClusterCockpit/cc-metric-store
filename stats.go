@@ -103,9 +103,9 @@ func (m *MemoryStore) Stats(selector Selector, metric string, from, to int64) (*
 		return nil, 0, 0, ErrNoData
 	}
 
-	if minfo.aggregation == AvgAggregation {
+	if minfo.Aggregation == AvgAggregation {
 		avg /= Float(n)
-	} else if n > 1 && minfo.aggregation != SumAggregation {
+	} else if n > 1 && minfo.Aggregation != SumAggregation {
 		return nil, 0, 0, errors.New("invalid aggregation")
 	}
 

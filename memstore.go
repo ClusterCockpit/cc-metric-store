@@ -192,35 +192,26 @@ func (b *buffer) read(from, to int64, data []Float) ([]Float, int64, int64, erro
 	return data[:i], from, t, nil
 }
 
-// Free up and free all buffers in the chain only containing data
-// older than `t`.
-func (b *buffer) free(t int64) (int, error) {
-	end := b.end()
-	if end < t && b.next != nil {
-		b.next.prev = nil
-		n := 0
-		for b != nil {
-			prev := b.prev
-			if prev != nil && prev.start > b.start {
-				panic("time travel?")
-			}
-
-			n += 1
-			// Buffers that come from the
-			// archive should not be reused.
-			if cap(b.data) == BUFFER_CAP {
-				bufferPool.Put(b)
-			}
-			b = prev
-		}
-		return n, nil
-	}
-
+// Returns true if this buffer needs to be freed.
+func (b *buffer) free(t int64) (delme bool, n int) {
 	if b.prev != nil {
-		return b.prev.free(t)
+		delme, m := b.prev.free(t)
+		n += m
+		if delme {
+			b.prev.next = nil
+			if cap(b.prev.data) == BUFFER_CAP {
+				bufferPool.Put(b.prev)
+			}
+			b.prev = nil
+		}
 	}
 
-	return 0, nil
+	end := b.end()
+	if end < t {
+		return true, n + 1
+	}
+
+	return false, n
 }
 
 // Call `callback` on every buffer that contains data in the range from `from` to `to`.
@@ -300,52 +291,54 @@ func (l *level) findLevelOrCreate(selector []string, nMetrics int) *level {
 	return child.findLevelOrCreate(selector[1:], nMetrics)
 }
 
-// For aggregation over multiple values at different cpus/sockets/..., not time!
-type AggregationStrategy int
+func (l *level) free(t int64) (int, error) {
+	l.lock.Lock()
+	defer l.lock.Unlock()
 
-const (
-	NoAggregation AggregationStrategy = iota
-	SumAggregation
-	AvgAggregation
-)
+	n := 0
+	for i, b := range l.metrics {
+		if b != nil {
+			delme, m := b.free(t)
+			n += m
+			if delme {
+				if cap(b.data) == BUFFER_CAP {
+					bufferPool.Put(b)
+				}
+				l.metrics[i] = nil
+			}
+		}
+	}
 
-type metricInfo struct {
-	offset      int
-	aggregation AggregationStrategy
-	frequency   int64
+	for _, l := range l.children {
+		m, err := l.free(t)
+		n += m
+		if err != nil {
+			return n, err
+		}
+	}
+
+	return n, nil
 }
 
 type MemoryStore struct {
 	root    level // root of the tree structure
-	metrics map[string]metricInfo
+	metrics map[string]MetricConfig
 }
 
 // Return a new, initialized instance of a MemoryStore.
 // Will panic if values in the metric configurations are invalid.
 func NewMemoryStore(metrics map[string]MetricConfig) *MemoryStore {
-	ms := make(map[string]metricInfo)
-
 	offset := 0
 	for key, config := range metrics {
-		aggregation := NoAggregation
-		if config.Aggregation == "sum" {
-			aggregation = SumAggregation
-		} else if config.Aggregation == "avg" {
-			aggregation = AvgAggregation
-		} else if config.Aggregation != "" {
-			panic("invalid aggregation strategy: " + config.Aggregation)
-		}
-
 		if config.Frequency == 0 {
 			panic("invalid frequency")
 		}
 
-		ms[key] = metricInfo{
+		metrics[key] = MetricConfig{
+			Frequency:   config.Frequency,
+			Aggregation: config.Aggregation,
 			offset:      offset,
-			aggregation: aggregation,
-			frequency:   config.Frequency,
 		}
-
 		offset += 1
 	}
 
@@ -354,7 +347,7 @@ func NewMemoryStore(metrics map[string]MetricConfig) *MemoryStore {
 			metrics:  make([]*buffer, len(metrics)),
 			children: make(map[string]*level),
 		},
-		metrics: ms,
+		metrics: metrics,
 	}
 }
 
@@ -363,10 +356,10 @@ func NewMemoryStore(metrics map[string]MetricConfig) *MemoryStore {
 func (m *MemoryStore) Write(selector []string, ts int64, metrics []Metric) error {
 	var ok bool
 	for i, metric := range metrics {
-		if metric.minfo.frequency == 0 {
-			metric.minfo, ok = m.metrics[metric.Name]
+		if metric.mc.Frequency == 0 {
+			metric.mc, ok = m.metrics[metric.Name]
 			if !ok {
-				metric.minfo.frequency = 0
+				metric.mc.Frequency = 0
 			}
 			metrics[i] = metric
 		}
@@ -386,15 +379,15 @@ func (m *MemoryStore) WriteToLevel(l *level, selector []string, ts int64, metric
 	defer l.lock.Unlock()
 
 	for _, metric := range metrics {
-		if metric.minfo.frequency == 0 {
+		if metric.mc.Frequency == 0 {
 			continue
 		}
 
-		b := l.metrics[metric.minfo.offset]
+		b := l.metrics[metric.mc.offset]
 		if b == nil {
 			// First write to this metric and level
-			b = newBuffer(ts, metric.minfo.frequency)
-			l.metrics[metric.minfo.offset] = b
+			b = newBuffer(ts, metric.mc.Frequency)
+			l.metrics[metric.mc.offset] = b
 		}
 
 		nb, err := b.write(ts, metric.Value)
@@ -404,7 +397,7 @@ func (m *MemoryStore) WriteToLevel(l *level, selector []string, ts int64, metric
 
 		// Last write created a new buffer...
 		if b != nb {
-			l.metrics[metric.minfo.offset] = nb
+			l.metrics[metric.mc.offset] = nb
 		}
 	}
 	return nil
@@ -424,7 +417,7 @@ func (m *MemoryStore) Read(selector Selector, metric string, from, to int64) ([]
 		return nil, 0, 0, errors.New("unkown metric: " + metric)
 	}
 
-	n, data := 0, make([]Float, (to-from)/minfo.frequency+1)
+	n, data := 0, make([]Float, (to-from)/minfo.Frequency+1)
 	err := m.root.findBuffers(selector, minfo.offset, func(b *buffer) error {
 		cdata, cfrom, cto, err := b.read(from, to, data)
 		if err != nil {
@@ -434,7 +427,17 @@ func (m *MemoryStore) Read(selector Selector, metric string, from, to int64) ([]
 		if n == 0 {
 			from, to = cfrom, cto
 		} else if from != cfrom || to != cto || len(data) != len(cdata) {
-			return ErrDataDoesNotAlign
+			missingfront, missingback := int((from-cfrom)/minfo.Frequency), int((to-cto)/minfo.Frequency)
+			if missingfront != 0 {
+				return ErrDataDoesNotAlign
+			}
+
+			cdata = cdata[0 : len(cdata)-missingback]
+			if len(cdata) != len(data) {
+				return ErrDataDoesNotAlign
+			}
+
+			from, to = cfrom, cto
 		}
 
 		data = cdata
@@ -447,12 +450,12 @@ func (m *MemoryStore) Read(selector Selector, metric string, from, to int64) ([]
 	} else if n == 0 {
 		return nil, 0, 0, errors.New("metric or host not found")
 	} else if n > 1 {
-		if minfo.aggregation == AvgAggregation {
+		if minfo.Aggregation == AvgAggregation {
 			normalize := 1. / Float(n)
 			for i := 0; i < len(data); i++ {
 				data[i] *= normalize
 			}
-		} else if minfo.aggregation != SumAggregation {
+		} else if minfo.Aggregation != SumAggregation {
 			return nil, 0, 0, errors.New("invalid aggregation")
 		}
 	}
@@ -462,14 +465,8 @@ func (m *MemoryStore) Read(selector Selector, metric string, from, to int64) ([]
 
 // Release all buffers for the selected level and all its children that contain only
 // values older than `t`.
-func (m *MemoryStore) Free(selector Selector, t int64) (int, error) {
-	n := 0
-	err := m.root.findBuffers(selector, -1, func(b *buffer) error {
-		m, err := b.free(t)
-		n += m
-		return err
-	})
-	return n, err
+func (m *MemoryStore) Free(selector []string, t int64) (int, error) {
+	return m.GetLevel(selector).free(t)
 }
 
 func (m *MemoryStore) FreeAll() error {

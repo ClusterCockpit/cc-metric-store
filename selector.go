@@ -55,20 +55,9 @@ func (l *level) findBuffers(selector Selector, offset int, f func(b *buffer) err
 	defer l.lock.RUnlock()
 
 	if len(selector) == 0 {
-		if offset == -1 {
-			for _, b := range l.metrics {
-				if b != nil {
-					err := f(b)
-					if err != nil {
-						return err
-					}
-				}
-			}
-		} else {
-			b := l.metrics[offset]
-			if b != nil {
-				return f(b)
-			}
+		b := l.metrics[offset]
+		if b != nil {
+			return f(b)
 		}
 
 		for _, lvl := range l.children {
