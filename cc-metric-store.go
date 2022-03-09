@@ -9,6 +9,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
+	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
@@ -240,6 +242,8 @@ func main() {
 		log.Printf("Checkpoints loaded (%d files, that took %dms)\n", files, time.Since(startupTime).Milliseconds())
 	}
 
+	runtime.GC()
+	debug.SetGCPercent(20)
 	ctx, shutdown := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup
