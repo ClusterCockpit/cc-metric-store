@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"sync"
+	"unsafe"
 )
 
 // Default buffer capacity.
@@ -231,6 +232,14 @@ func (b *buffer) iterFromTo(from, to int64, callback func(b *buffer) error) erro
 	return nil
 }
 
+func (b *buffer) count() int64 {
+	res := int64(len(b.data))
+	if b.prev != nil {
+		res += b.prev.count()
+	}
+	return res
+}
+
 // Could also be called "node" as this forms a node in a tree structure.
 // Called level because "node" might be confusing here.
 // Can be both a leaf or a inner node. In this tree structue, inner nodes can
@@ -318,6 +327,24 @@ func (l *level) free(t int64) (int, error) {
 	}
 
 	return n, nil
+}
+
+func (l *level) sizeInBytes() int64 {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+	size := int64(0)
+
+	for _, b := range l.metrics {
+		if b != nil {
+			size += b.count() * int64(unsafe.Sizeof(Float(0)))
+		}
+	}
+
+	for _, child := range l.children {
+		size += child.sizeInBytes()
+	}
+
+	return size
 }
 
 type MemoryStore struct {
@@ -475,6 +502,10 @@ func (m *MemoryStore) FreeAll() error {
 	}
 
 	return nil
+}
+
+func (m *MemoryStore) SizeInBytes() int64 {
+	return m.root.sizeInBytes()
 }
 
 // Given a selector, return a list of all children of the level selected.

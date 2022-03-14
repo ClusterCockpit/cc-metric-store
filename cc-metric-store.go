@@ -97,8 +97,9 @@ type Config struct {
 		Restore  string `json:"restore"`
 	} `json:"checkpoints"`
 	Archive struct {
-		Interval string `json:"interval"`
-		RootDir  string `json:"directory"`
+		Interval      string `json:"interval"`
+		RootDir       string `json:"directory"`
+		DeleteInstead bool   `json:"delete-instead"`
 	} `json:"archive"`
 }
 
@@ -200,7 +201,7 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 			case <-ticks:
 				t := time.Now().Add(-d)
 				log.Printf("start archiving checkpoints (older than %s)...\n", t.Format(time.RFC3339))
-				n, err := ArchiveCheckpoints(conf.Checkpoints.RootDir, conf.Archive.RootDir, t.Unix())
+				n, err := ArchiveCheckpoints(conf.Checkpoints.RootDir, conf.Archive.RootDir, t.Unix(), conf.Archive.DeleteInstead)
 				if err != nil {
 					log.Printf("archiving failed: %s\n", err.Error())
 				} else {
@@ -236,14 +237,18 @@ func main() {
 	restoreFrom := startupTime.Add(-d)
 	log.Printf("Loading checkpoints newer than %s\n", restoreFrom.Format(time.RFC3339))
 	files, err := memoryStore.FromCheckpoint(conf.Checkpoints.RootDir, restoreFrom.Unix())
+	loadedData := memoryStore.SizeInBytes() / 1024 / 1024 // In MB
 	if err != nil {
 		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
 	} else {
-		log.Printf("Checkpoints loaded (%d files, that took %dms)\n", files, time.Since(startupTime).Milliseconds())
+		log.Printf("Checkpoints loaded (%d files, %d MB, that took %dms)\n", files, loadedData, time.Since(startupTime).Milliseconds())
 	}
 
 	runtime.GC()
-	debug.SetGCPercent(20)
+	if loadedData > 1000 {
+		debug.SetGCPercent(20)
+	}
+
 	ctx, shutdown := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup

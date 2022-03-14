@@ -44,7 +44,7 @@ func (l *level) debugDump(w *bufio.Writer, m *MemoryStore, indent string) error 
 }
 
 func (m *MemoryStore) DebugDump(w *bufio.Writer) error {
-	fmt.Fprintf(w, "MemoryStore:\n")
+	fmt.Fprintf(w, "MemoryStore (%d MB):\n", m.SizeInBytes()/1024/1024)
 	m.root.debugDump(w, m, "  ")
 	return w.Flush()
 }

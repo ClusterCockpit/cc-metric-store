@@ -449,7 +449,7 @@ func findFiles(direntries []fs.DirEntry, t int64, findMoreRecentFiles bool) ([]s
 
 // ZIP all checkpoint files older than `from` together and write them to the `archiveDir`,
 // deleting them from the `checkpointsDir`.
-func ArchiveCheckpoints(checkpointsDir, archiveDir string, from int64) (int, error) {
+func ArchiveCheckpoints(checkpointsDir, archiveDir string, from int64, deleteInstead bool) (int, error) {
 	entries1, err := os.ReadDir(checkpointsDir)
 	if err != nil {
 		return 0, err
@@ -469,7 +469,7 @@ func ArchiveCheckpoints(checkpointsDir, archiveDir string, from int64) (int, err
 		go func() {
 			defer wg.Done()
 			for workItem := range work {
-				m, err := archiveCheckpoints(workItem.cdir, workItem.adir, from)
+				m, err := archiveCheckpoints(workItem.cdir, workItem.adir, from, deleteInstead)
 				if err != nil {
 					log.Printf("error while archiving %s/%s: %s", workItem.cluster, workItem.host, err.Error())
 					atomic.AddInt32(&errs, 1)
@@ -509,7 +509,7 @@ func ArchiveCheckpoints(checkpointsDir, archiveDir string, from int64) (int, err
 }
 
 // Helper function for `ArchiveCheckpoints`.
-func archiveCheckpoints(dir string, archiveDir string, from int64) (int, error) {
+func archiveCheckpoints(dir string, archiveDir string, from int64, deleteInstead bool) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return 0, err
@@ -518,6 +518,18 @@ func archiveCheckpoints(dir string, archiveDir string, from int64) (int, error) 
 	files, err := findFiles(entries, from, false)
 	if err != nil {
 		return 0, err
+	}
+
+	if deleteInstead {
+		n := 0
+		for _, checkpoint := range files {
+			filename := filepath.Join(dir, checkpoint)
+			if err = os.Remove(filename); err != nil {
+				return n, err
+			}
+			n += 1
+		}
+		return n, nil
 	}
 
 	filename := filepath.Join(archiveDir, fmt.Sprintf("%d.zip", from))
@@ -538,15 +550,15 @@ func archiveCheckpoints(dir string, archiveDir string, from int64) (int, error) 
 	defer zw.Close()
 
 	n := 0
-	for _, jsonFile := range files {
-		filename := filepath.Join(dir, jsonFile)
+	for _, checkpoint := range files {
+		filename := filepath.Join(dir, checkpoint)
 		r, err := os.Open(filename)
 		if err != nil {
 			return n, err
 		}
 		defer r.Close()
 
-		w, err := zw.Create(jsonFile)
+		w, err := zw.Create(checkpoint)
 		if err != nil {
 			return n, err
 		}
