@@ -459,7 +459,11 @@ func (m *MemoryStore) Read(selector Selector, metric string, from, to int64) ([]
 				return ErrDataDoesNotAlign
 			}
 
-			cdata = cdata[0 : len(cdata)-missingback]
+			newlen := len(cdata) - missingback
+			if newlen < 1 {
+				return ErrDataDoesNotAlign
+			}
+			cdata = cdata[0:newlen]
 			if len(cdata) != len(data) {
 				return ErrDataDoesNotAlign
 			}
