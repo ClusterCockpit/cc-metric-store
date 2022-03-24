@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,7 +60,15 @@ type CheckpointFile struct {
 
 var ErrNoNewData error = errors.New("all data already archived")
 
-var NumWorkers int = 6
+var NumWorkers int = 4
+
+func init() {
+	maxWorkers := 10
+	NumWorkers = runtime.NumCPU()/2 + 1
+	if NumWorkers > maxWorkers {
+		NumWorkers = maxWorkers
+	}
+}
 
 // Metrics stored at the lowest 2 levels are not stored away (root and cluster)!
 // On a per-host basis a new JSON file is created. I have no idea if this will scale.
@@ -115,6 +124,11 @@ func (m *MemoryStore) ToCheckpoint(dir string, from, to int64) (int, error) {
 			level:    levels[i],
 			dir:      dir,
 			selector: selectors[i],
+		}
+
+		// See comment in FromCheckpoint()
+		if i%NumWorkers == 0 {
+			runtime.GC()
 		}
 	}
 
@@ -227,7 +241,7 @@ func (l *level) toCheckpoint(dir string, from, to int64, m *MemoryStore) error {
 // Different host's data is loaded to memory in parallel.
 func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
 	var wg sync.WaitGroup
-	work := make(chan [2]string, NumWorkers*2)
+	work := make(chan [2]string, NumWorkers)
 	n, errs := int32(0), int32(0)
 
 	wg.Add(NumWorkers)
@@ -246,6 +260,7 @@ func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
 		}()
 	}
 
+	i := 0
 	clustersDir, err := os.ReadDir(dir)
 	for _, clusterDir := range clustersDir {
 		if !clusterDir.IsDir() {
@@ -263,6 +278,16 @@ func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
 			if !hostDir.IsDir() {
 				err = errors.New("expected only directories at second level of checkpoints/ directory")
 				goto done
+			}
+
+			i++
+			if i%NumWorkers == 0 && i > 100 {
+				// Forcing garbage collection runs here regulary during the loading of checkpoints
+				// will decrease the total heap size after loading everything back to memory is done.
+				// While loading data, the heap will grow fast, so the GC target size will double
+				// almost always. By forcing GCs here, we can keep it growing more slowly so that
+				// at the end, less memory is wasted.
+				runtime.GC()
 			}
 
 			work <- [2]string{clusterDir.Name(), hostDir.Name()}

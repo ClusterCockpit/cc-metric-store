@@ -124,6 +124,19 @@ func loadConfiguration(file string) Config {
 
 func intervals(wg *sync.WaitGroup, ctx context.Context) {
 	wg.Add(3)
+	// go func() {
+	// 	defer wg.Done()
+	// 	ticks := time.Tick(30 * time.Minute)
+	// 	for {
+	// 		select {
+	// 		case <-ctx.Done():
+	// 			return
+	// 		case <-ticks:
+	// 			runtime.GC()
+	// 		}
+	// 	}
+	// }()
+
 	go func() {
 		defer wg.Done()
 		d, err := time.ParseDuration(conf.RetentionInMemory)
@@ -241,12 +254,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
 	} else {
-		log.Printf("Checkpoints loaded (%d files, %d MB, that took %dms)\n", files, loadedData, time.Since(startupTime).Milliseconds())
+		log.Printf("Checkpoints loaded (%d files, %d MB, that took %fs)\n", files, loadedData, time.Since(startupTime).Seconds())
 	}
 
+	// Try to use less memory by forcing a GC run here and then
+	// lowering the target percentage. The default of 100 means
+	// that only once the ratio of new allocations execeds the
+	// previously active heap, a GC is triggered.
+	// Forcing a GC here will set the "previously active heap"
+	// to a minumum.
 	runtime.GC()
-	if loadedData > 1000 {
-		debug.SetGCPercent(20)
+	if loadedData > 1000 && os.Getenv("GOGC") == "" {
+		debug.SetGCPercent(10)
 	}
 
 	ctx, shutdown := context.WithCancel(context.Background())
