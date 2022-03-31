@@ -295,6 +295,8 @@ func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 				metric.Value = Float(val.FloatV())
 			} else if val.Kind() == lineprotocol.Int {
 				metric.Value = Float(val.IntV())
+			} else if val.Kind() == lineprotocol.Uint {
+				metric.Value = Float(val.UintV())
 			} else {
 				return fmt.Errorf("unsupported value type in message: %s", val.Kind().String())
 			}

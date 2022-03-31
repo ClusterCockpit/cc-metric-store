@@ -50,6 +50,22 @@ func (se *SelectorElement) MarshalJSON() ([]byte, error) {
 
 type Selector []SelectorElement
 
+func (l *level) findLevel(selector []string) *level {
+	if len(selector) == 0 {
+		return l
+	}
+
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+
+	lvl := l.children[selector[0]]
+	if lvl == nil {
+		return nil
+	}
+
+	return lvl.findLevel(selector[1:])
+}
+
 func (l *level) findBuffers(selector Selector, offset int, f func(b *buffer) error) error {
 	l.lock.RLock()
 	defer l.lock.RUnlock()

@@ -277,7 +277,7 @@ func main() {
 		for {
 			sig := <-sigs
 			if sig == syscall.SIGUSR1 {
-				memoryStore.DebugDump(bufio.NewWriter(os.Stdout))
+				memoryStore.DebugDump(bufio.NewWriter(os.Stdout), nil)
 				continue
 			}
 

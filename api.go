@@ -57,6 +57,19 @@ func (data *ApiMetricData) AddStats() {
 	}
 }
 
+func (data *ApiMetricData) ScaleBy(f Float) {
+	if f == 0 || f == 1 {
+		return
+	}
+
+	data.Avg *= f
+	data.Min *= f
+	data.Max *= f
+	for i := 0; i < len(data.Data); i++ {
+		data.Data[i] *= f
+	}
+}
+
 func (data *ApiMetricData) PadDataWithNull(from, to int64, metric string) {
 	minfo, ok := memoryStore.metrics[metric]
 	if !ok {
@@ -162,13 +175,14 @@ type ApiQueryResponse struct {
 }
 
 type ApiQuery struct {
-	Metric     string  `json:"metric"`
-	Hostname   string  `json:"host"`
-	Aggregate  bool    `json:"aggreg"`
-	Type       *string `json:"type,omitempty"`
-	TypeIds    []int   `json:"type-ids,omitempty"`
-	SubType    *string `json:"subtype,omitempty"`
-	SubTypeIds []int   `json:"subtype-ids,omitempty"`
+	Metric      string  `json:"metric"`
+	Hostname    string  `json:"host"`
+	Aggregate   bool    `json:"aggreg"`
+	ScaleFactor Float   `json:"scale-by,omitempty"`
+	Type        *string `json:"type,omitempty"`
+	TypeIds     []int   `json:"type-ids,omitempty"`
+	SubType     *string `json:"subtype,omitempty"`
+	SubTypeIds  []int   `json:"subtype-ids,omitempty"`
 }
 
 func handleQuery(rw http.ResponseWriter, r *http.Request) {
@@ -260,6 +274,9 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 			if req.WithStats {
 				data.AddStats()
 			}
+			if query.ScaleFactor != 0 {
+				data.ScaleBy(query.ScaleFactor)
+			}
 			if req.WithPadding {
 				data.PadDataWithNull(req.From, req.To, query.Metric)
 			}
@@ -333,17 +350,23 @@ func StartApiServer(ctx context.Context, httpConfig *HttpConfig) error {
 	r.HandleFunc("/api/write", handleWrite)
 	r.HandleFunc("/api/query", handleQuery)
 	r.HandleFunc("/api/debug", func(rw http.ResponseWriter, r *http.Request) {
-		bw := bufio.NewWriter(rw)
-		defer bw.Flush()
+		raw := r.URL.Query().Get("selector")
+		selector := []string{}
+		if len(raw) != 0 {
+			selector = strings.Split(raw, ":")
+		}
 
-		memoryStore.DebugDump(bw)
+		if err := memoryStore.DebugDump(bufio.NewWriter(rw), selector); err != nil {
+			rw.WriteHeader(http.StatusBadRequest)
+			rw.Write([]byte(err.Error()))
+		}
 	})
 
 	server := &http.Server{
 		Handler:      r,
 		Addr:         httpConfig.Address,
-		WriteTimeout: 15 * time.Second,
-		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		ReadTimeout:  30 * time.Second,
 	}
 
 	if len(conf.JwtPublicKey) > 0 {
