@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -101,11 +102,18 @@ type Config struct {
 		RootDir       string `json:"directory"`
 		DeleteInstead bool   `json:"delete-instead"`
 	} `json:"archive"`
+	Debug struct {
+		EnableGops bool   `json:"gops"`
+		DumpToFile string `json:"dump-to-file"`
+	} `json:"debug"`
 }
 
 var conf Config
 var memoryStore *MemoryStore = nil
 var lastCheckpoint time.Time
+
+var debugDumpLock sync.Mutex
+var debugDump io.Writer = io.Discard
 
 func loadConfiguration(file string) Config {
 	var config Config
@@ -232,15 +240,24 @@ func main() {
 	flag.BoolVar(&enableGopsAgent, "gops", false, "Listen via github.com/google/gops/agent")
 	flag.Parse()
 
-	if enableGopsAgent {
+	startupTime := time.Now()
+	conf = loadConfiguration(configFile)
+	memoryStore = NewMemoryStore(conf.Metrics)
+
+	if enableGopsAgent || conf.Debug.EnableGops {
 		if err := agent.Listen(agent.Options{}); err != nil {
 			log.Fatal(err)
 		}
 	}
 
-	startupTime := time.Now()
-	conf = loadConfiguration(configFile)
-	memoryStore = NewMemoryStore(conf.Metrics)
+	if conf.Debug.DumpToFile != "" {
+		f, err := os.Create(conf.Debug.DumpToFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		debugDump = f
+	}
 
 	d, err := time.ParseDuration(conf.Checkpoints.Restore)
 	if err != nil {
@@ -323,4 +340,10 @@ func main() {
 		log.Printf("Writing checkpoint failed: %s\n", err.Error())
 	}
 	log.Printf("Done! (%d files written)\n", files)
+
+	if closer, ok := debugDump.(io.Closer); ok {
+		if err := closer.Close(); err != nil {
+			log.Printf("error: %s", err.Error())
+		}
+	}
 }

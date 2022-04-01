@@ -145,7 +145,26 @@ func handleWrite(rw http.ResponseWriter, r *http.Request) {
 
 	bytes, err := io.ReadAll(r.Body)
 	if err != nil {
+		log.Printf("error while reading request body: %s", err.Error())
 		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if debugDump != io.Discard {
+		now := time.Now()
+		msg := make([]byte, 0, 512)
+		msg = append(msg, "\n--- local unix time: "...)
+		msg = strconv.AppendInt(msg, now.Unix(), 10)
+		msg = append(msg, " ---\n"...)
+
+		debugDumpLock.Lock()
+		defer debugDumpLock.Unlock()
+		if _, err := debugDump.Write(msg); err != nil {
+			log.Printf("error while writing to debug dump: %s", err.Error())
+		}
+		if _, err := debugDump.Write(bytes); err != nil {
+			log.Printf("error while writing to debug dump: %s", err.Error())
+		}
 		return
 	}
 
