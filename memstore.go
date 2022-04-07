@@ -98,7 +98,11 @@ func (b *buffer) write(ts int64, value Float) (*buffer, error) {
 }
 
 func (b *buffer) end() int64 {
-	return b.start + int64(len(b.data))*b.frequency
+	return b.firstWrite() + int64(len(b.data))*b.frequency
+}
+
+func (b *buffer) firstWrite() int64 {
+	return b.start + (b.frequency / 2)
 }
 
 func (b *buffer) close() {}
@@ -151,11 +155,11 @@ func (b *buffer) close() {
 // The loaded values are added to `data` and `data` is returned, possibly with a shorter length.
 // If `data` is not long enough to hold all values, this function will panic!
 func (b *buffer) read(from, to int64, data []Float) ([]Float, int64, int64, error) {
-	if from < b.start {
+	if from < b.firstWrite() {
 		if b.prev != nil {
 			return b.prev.read(from, to, data)
 		}
-		from = b.start
+		from = b.firstWrite()
 	}
 
 	var i int = 0
