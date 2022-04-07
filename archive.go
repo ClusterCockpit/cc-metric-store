@@ -44,7 +44,7 @@ func (cm *CheckpointMetrics) MarshalJSON() ([]byte, error) {
 		if x.IsNaN() {
 			buf = append(buf, `null`...)
 		} else {
-			buf = strconv.AppendFloat(buf, float64(x), 'f', -1, 32)
+			buf = strconv.AppendFloat(buf, float64(x), 'f', 1, 32)
 		}
 	}
 	buf = append(buf, `]}`...)
@@ -124,11 +124,6 @@ func (m *MemoryStore) ToCheckpoint(dir string, from, to int64) (int, error) {
 			level:    levels[i],
 			dir:      dir,
 			selector: selectors[i],
-		}
-
-		// See comment in FromCheckpoint()
-		if i%NumWorkers == 0 {
-			runtime.GC()
 		}
 	}
 
