@@ -194,14 +194,14 @@ type ApiQueryResponse struct {
 }
 
 type ApiQuery struct {
-	Metric      string  `json:"metric"`
-	Hostname    string  `json:"host"`
-	Aggregate   bool    `json:"aggreg"`
-	ScaleFactor Float   `json:"scale-by,omitempty"`
-	Type        *string `json:"type,omitempty"`
-	TypeIds     []int   `json:"type-ids,omitempty"`
-	SubType     *string `json:"subtype,omitempty"`
-	SubTypeIds  []int   `json:"subtype-ids,omitempty"`
+	Metric      string   `json:"metric"`
+	Hostname    string   `json:"host"`
+	Aggregate   bool     `json:"aggreg"`
+	ScaleFactor Float    `json:"scale-by,omitempty"`
+	Type        *string  `json:"type,omitempty"`
+	TypeIds     []string `json:"type-ids,omitempty"`
+	SubType     *string  `json:"subtype,omitempty"`
+	SubTypeIds  []string `json:"subtype-ids,omitempty"`
 }
 
 func handleQuery(rw http.ResponseWriter, r *http.Request) {
@@ -235,22 +235,22 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 			sel := Selector{{String: req.Cluster}, {String: query.Hostname}}
 			if query.Type != nil {
 				if len(query.TypeIds) == 1 {
-					sel = append(sel, SelectorElement{String: fmt.Sprintf("%s%d", *query.Type, query.TypeIds[0])})
+					sel = append(sel, SelectorElement{String: *query.Type + query.TypeIds[0]})
 				} else {
 					ids := make([]string, len(query.TypeIds))
 					for i, id := range query.TypeIds {
-						ids[i] = fmt.Sprintf("%s%d", *query.Type, id)
+						ids[i] = *query.Type + id
 					}
 					sel = append(sel, SelectorElement{Group: ids})
 				}
 
 				if query.SubType != nil {
 					if len(query.SubTypeIds) == 1 {
-						sel = append(sel, SelectorElement{String: fmt.Sprintf("%s%d", *query.SubType, query.SubTypeIds[0])})
+						sel = append(sel, SelectorElement{String: *query.SubType + query.SubTypeIds[0]})
 					} else {
 						ids := make([]string, len(query.SubTypeIds))
 						for i, id := range query.SubTypeIds {
-							ids[i] = fmt.Sprintf("%s%d", *query.SubType, id)
+							ids[i] = *query.SubType + id
 						}
 						sel = append(sel, SelectorElement{Group: ids})
 					}
@@ -263,14 +263,14 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 					for _, subTypeId := range query.SubTypeIds {
 						sels = append(sels, Selector{
 							{String: req.Cluster}, {String: query.Hostname},
-							{String: fmt.Sprintf("%s%d", *query.Type, typeId)},
-							{String: fmt.Sprintf("%s%d", *query.SubType, subTypeId)}})
+							{String: *query.Type + typeId},
+							{String: *query.SubType + subTypeId}})
 					}
 				} else {
 					sels = append(sels, Selector{
 						{String: req.Cluster},
 						{String: query.Hostname},
-						{String: fmt.Sprintf("%s%d", *query.Type, typeId)}})
+						{String: *query.Type + typeId}})
 				}
 			}
 		}

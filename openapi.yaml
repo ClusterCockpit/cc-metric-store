@@ -135,7 +135,7 @@ components:
         type-ids:
           type: array
           items:
-            type: integer
+            type: string
         aggreg:
           type: boolean
           description: 'If true, every query result will have exactly one element. Otherwise, the data for every requested type-id/sub-type-id is provided seperately'
