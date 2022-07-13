@@ -1,14 +1,18 @@
 package checkpoints
 
 import (
+	"bufio"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"reflect"
 	"unsafe"
 
+	"github.com/ClusterCockpit/cc-metric-store/internal/memstore"
 	"github.com/ClusterCockpit/cc-metric-store/internal/types"
 )
 
+const magicValue string = "CCMSv1.0" // MUST be 8 bytes!
 const writeBufferSize int = 8192
 
 // A single checkpoint file is defined by this structure.
@@ -35,7 +39,7 @@ type Metrics struct {
 
 func (c *Checkpoint) Serialize(w io.Writer) error {
 	// Write magic value (8 byte):
-	if _, err := w.Write([]byte("CCMSv1.0")); err != nil {
+	if _, err := w.Write([]byte(magicValue)); err != nil {
 		return err
 	}
 
@@ -109,6 +113,113 @@ func (m *Metrics) serialize(w io.Writer, buf []byte) ([]byte, error) {
 	return buf, nil
 }
 
+func (c *Checkpoint) Deserialize(r *bufio.Reader) error {
+	buf := make([]byte, 8, 16384)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return err
+	}
+
+	if string(buf) != magicValue {
+		return fmt.Errorf("file corrupted: expected the file to start with %#v (got %#v)", magicValue, string(buf))
+	}
+
+	bytes, err := decodeBytes(buf, r)
+	if err != nil {
+		return err
+	}
+	c.Reserved = bytes
+
+	if c.From, err = decodeUint64(buf, r); err != nil {
+		return err
+	}
+	if c.To, err = decodeUint64(buf, r); err != nil {
+		return err
+	}
+
+	c.Root = &CheckpointLevel{}
+	return c.Root.deserialize(buf, r)
+}
+
+func (c *CheckpointLevel) deserialize(buf []byte, r *bufio.Reader) error {
+	var err error
+	if c.Reserved, err = decodeBytes(buf, r); err != nil {
+		return err
+	}
+
+	// Metrics:
+	n, err := decodeUint32(buf, r)
+	if err != nil {
+		return err
+	}
+	c.Metrics = make(map[string]*Metrics, n)
+	for i := 0; i < int(n); i++ {
+		key, err := decodeString(buf, r)
+		if err != nil {
+			return err
+		}
+
+		metrics := &Metrics{}
+		if err := metrics.deserialize(buf, r); err != nil {
+			return err
+		}
+
+		c.Metrics[key] = metrics
+	}
+
+	// Sublevels:
+	n, err = decodeUint32(buf, r)
+	if err != nil {
+		return err
+	}
+	c.Sublevels = make(map[string]*CheckpointLevel, n)
+	for i := 0; i < int(n); i++ {
+		key, err := decodeString(buf, r)
+		if err != nil {
+			return err
+		}
+
+		sublevel := &CheckpointLevel{}
+		if err := sublevel.deserialize(buf, r); err != nil {
+			return err
+		}
+
+		c.Sublevels[key] = sublevel
+	}
+
+	return nil
+}
+
+func (m *Metrics) deserialize(buf []byte, r *bufio.Reader) error {
+	bytes, err := decodeBytes(buf, r)
+	if err != nil {
+		return err
+	}
+	m.Reserved = bytes
+
+	if m.Frequency, err = decodeUint64(buf, r); err != nil {
+		return err
+	}
+	if m.From, err = decodeUint64(buf, r); err != nil {
+		return err
+	}
+
+	n, err := decodeUint32(buf, r)
+	if err != nil {
+		return err
+	}
+
+	var x types.Float
+	elmsize := unsafe.Sizeof(x)
+	bytes = memstore.RequestBytes(int(n) * int(elmsize))
+	if _, err := io.ReadFull(r, bytes); err != nil {
+		return err
+	}
+
+	sh := (*reflect.SliceHeader)(unsafe.Pointer(&bytes))
+	m.Data = unsafe.Slice((*types.Float)(unsafe.Pointer(sh.Data)), n)
+	return nil
+}
+
 func encodeBytes(buf []byte, bytes []byte) []byte {
 	buf = encodeUint32(buf, uint32(len(bytes)))
 	buf = append(buf, bytes...)
@@ -131,4 +242,56 @@ func encodeUint32(buf []byte, i uint32) []byte {
 	buf = append(buf, 0, 0, 0, 0) // 4 bytes
 	binary.LittleEndian.PutUint32(buf, i)
 	return buf[4:]
+}
+
+func decodeBytes(buf []byte, r *bufio.Reader) ([]byte, error) {
+	len, err := decodeUint32(buf, r)
+	if err != nil {
+		return nil, err
+	}
+
+	bytes := make([]byte, len)
+	if _, err := io.ReadFull(r, bytes); err != nil {
+		return nil, err
+	}
+	return bytes, nil
+}
+
+func decodeString(buf []byte, r *bufio.Reader) (string, error) {
+	len, err := decodeUint32(buf, r)
+	if err != nil {
+		return "", err
+	}
+
+	var bytes []byte
+	if cap(buf) <= int(len) {
+		bytes = buf[0:int(len)]
+	} else {
+		bytes = make([]byte, int(len))
+	}
+
+	if _, err := io.ReadFull(r, bytes); err != nil {
+		return "", err
+	}
+	return string(bytes), nil
+}
+
+func decodeUint64(buf []byte, r *bufio.Reader) (uint64, error) {
+	buf = buf[0:8]
+	_, err := io.ReadFull(r, buf)
+	if err != nil {
+		return 0, err
+	}
+
+	return binary.LittleEndian.Uint64(buf), nil
+}
+
+func decodeUint32(buf []byte, r *bufio.Reader) (uint32, error) {
+	buf = buf[0:4]
+	_, err := io.ReadFull(r, buf)
+	if err != nil {
+		return 0, err
+	}
+
+	return binary.LittleEndian.Uint32(buf), nil
 }
