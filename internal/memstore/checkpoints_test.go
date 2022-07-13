@@ -1,4 +1,4 @@
-package checkpoints
+package memstore
 
 import (
 	"bufio"

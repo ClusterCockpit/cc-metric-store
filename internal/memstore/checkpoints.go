@@ -1,4 +1,4 @@
-package checkpoints
+package memstore
 
 import (
 	"bufio"
@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"unsafe"
 
-	"github.com/ClusterCockpit/cc-metric-store/internal/memstore"
 	"github.com/ClusterCockpit/cc-metric-store/internal/types"
 )
 
@@ -211,7 +210,7 @@ func (m *Metrics) deserialize(buf []byte, r *bufio.Reader) error {
 
 	var x types.Float
 	elmsize := unsafe.Sizeof(x)
-	bytes = memstore.RequestBytes(int(n) * int(elmsize))
+	bytes = RequestBytes(int(n) * int(elmsize))
 	if _, err := io.ReadFull(r, bytes); err != nil {
 		return fmt.Errorf("reading payload (n=%d, elmsize=%d): %w", n, elmsize, err)
 	}
