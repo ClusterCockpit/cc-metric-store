@@ -2,7 +2,6 @@ package checkpoints
 
 import (
 	"bufio"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"reflect"
@@ -38,20 +37,16 @@ type Metrics struct {
 }
 
 func (c *Checkpoint) Serialize(w io.Writer) error {
-	// Write magic value (8 byte):
-	if _, err := w.Write([]byte(magicValue)); err != nil {
-		return err
-	}
-
 	// The header:
 	buf := make([]byte, 0, writeBufferSize*2)
+	buf = append(buf, magicValue...)
 	buf = encodeBytes(buf, c.Reserved)
 	buf = encodeUint64(buf, c.From)
 	buf = encodeUint64(buf, c.To)
 
 	// The rest:
-	buf, err := c.Root.serialize(w, buf)
-	if err != nil {
+	var err error
+	if buf, err = c.Root.serialize(w, buf); err != nil {
 		return err
 	}
 
@@ -99,7 +94,7 @@ func (c *CheckpointLevel) serialize(w io.Writer, buf []byte) ([]byte, error) {
 }
 
 func (m *Metrics) serialize(w io.Writer, buf []byte) ([]byte, error) {
-	buf = encodeBytes(m.Reserved, buf)           // Reserved
+	buf = encodeBytes(buf, m.Reserved)           // Reserved
 	buf = encodeUint64(buf, m.Frequency)         // Frequency
 	buf = encodeUint64(buf, m.From)              // First measurmenet timestamp
 	buf = encodeUint32(buf, uint32(len(m.Data))) // Number of elements
@@ -114,7 +109,7 @@ func (m *Metrics) serialize(w io.Writer, buf []byte) ([]byte, error) {
 }
 
 func (c *Checkpoint) Deserialize(r *bufio.Reader) error {
-	buf := make([]byte, 8, 16384)
+	buf := make([]byte, len(magicValue), 16384)
 	if _, err := io.ReadFull(r, buf); err != nil {
 		return err
 	}
@@ -151,19 +146,22 @@ func (c *CheckpointLevel) deserialize(buf []byte, r *bufio.Reader) error {
 	if err != nil {
 		return err
 	}
-	c.Metrics = make(map[string]*Metrics, n)
-	for i := 0; i < int(n); i++ {
-		key, err := decodeString(buf, r)
-		if err != nil {
-			return err
-		}
+	if n != 0 {
+		c.Metrics = make(map[string]*Metrics, n)
+		for i := 0; i < int(n); i++ {
+			key, err := decodeString(buf, r)
+			if err != nil {
+				return fmt.Errorf("decoding metric key: %w", err)
+			}
 
-		metrics := &Metrics{}
-		if err := metrics.deserialize(buf, r); err != nil {
-			return err
-		}
+			// log.Printf("decoding metric %#v...\n", key)
+			metrics := &Metrics{}
+			if err := metrics.deserialize(buf, r); err != nil {
+				return fmt.Errorf("decoding metric for key %#v: %w", key, err)
+			}
 
-		c.Metrics[key] = metrics
+			c.Metrics[key] = metrics
+		}
 	}
 
 	// Sublevels:
@@ -171,19 +169,22 @@ func (c *CheckpointLevel) deserialize(buf []byte, r *bufio.Reader) error {
 	if err != nil {
 		return err
 	}
-	c.Sublevels = make(map[string]*CheckpointLevel, n)
-	for i := 0; i < int(n); i++ {
-		key, err := decodeString(buf, r)
-		if err != nil {
-			return err
-		}
+	if n != 0 {
+		c.Sublevels = make(map[string]*CheckpointLevel, n)
+		for i := 0; i < int(n); i++ {
+			key, err := decodeString(buf, r)
+			if err != nil {
+				return fmt.Errorf("decoding sublevel key: %w", err)
+			}
 
-		sublevel := &CheckpointLevel{}
-		if err := sublevel.deserialize(buf, r); err != nil {
-			return err
-		}
+			// log.Printf("decoding sublevel %#v...\n", key)
+			sublevel := &CheckpointLevel{}
+			if err := sublevel.deserialize(buf, r); err != nil {
+				return fmt.Errorf("decoding sublevel for key %#v: %w", key, err)
+			}
 
-		c.Sublevels[key] = sublevel
+			c.Sublevels[key] = sublevel
+		}
 	}
 
 	return nil
@@ -212,7 +213,7 @@ func (m *Metrics) deserialize(buf []byte, r *bufio.Reader) error {
 	elmsize := unsafe.Sizeof(x)
 	bytes = memstore.RequestBytes(int(n) * int(elmsize))
 	if _, err := io.ReadFull(r, bytes); err != nil {
-		return err
+		return fmt.Errorf("reading payload (n=%d, elmsize=%d): %w", n, elmsize, err)
 	}
 
 	sh := (*reflect.SliceHeader)(unsafe.Pointer(&bytes))
@@ -222,26 +223,32 @@ func (m *Metrics) deserialize(buf []byte, r *bufio.Reader) error {
 
 func encodeBytes(buf []byte, bytes []byte) []byte {
 	buf = encodeUint32(buf, uint32(len(bytes)))
-	buf = append(buf, bytes...)
-	return buf
+	return append(buf, bytes...)
 }
 
 func encodeString(buf []byte, str string) []byte {
 	buf = encodeUint32(buf, uint32(len(str)))
-	buf = append(buf, str...)
-	return buf
+	return append(buf, str...)
 }
 
 func encodeUint64(buf []byte, i uint64) []byte {
-	buf = append(buf, 0, 0, 0, 0, 0, 0, 0, 0) // 8 bytes
-	binary.LittleEndian.PutUint64(buf, i)
-	return buf[8:]
+	return append(buf,
+		byte((i>>0)&0xff),
+		byte((i>>8)&0xff),
+		byte((i>>16)&0xff),
+		byte((i>>24)&0xff),
+		byte((i>>32)&0xff),
+		byte((i>>40)&0xff),
+		byte((i>>48)&0xff),
+		byte((i>>56)&0xff))
 }
 
 func encodeUint32(buf []byte, i uint32) []byte {
-	buf = append(buf, 0, 0, 0, 0) // 4 bytes
-	binary.LittleEndian.PutUint32(buf, i)
-	return buf[4:]
+	return append(buf,
+		byte((i>>0)&0xff),
+		byte((i>>8)&0xff),
+		byte((i>>16)&0xff),
+		byte((i>>24)&0xff))
 }
 
 func decodeBytes(buf []byte, r *bufio.Reader) ([]byte, error) {
@@ -250,9 +257,13 @@ func decodeBytes(buf []byte, r *bufio.Reader) ([]byte, error) {
 		return nil, err
 	}
 
+	if len == 0 {
+		return nil, nil
+	}
+
 	bytes := make([]byte, len)
 	if _, err := io.ReadFull(r, bytes); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decoding %d bytes: %w", len, err)
 	}
 	return bytes, nil
 }
@@ -283,7 +294,14 @@ func decodeUint64(buf []byte, r *bufio.Reader) (uint64, error) {
 		return 0, err
 	}
 
-	return binary.LittleEndian.Uint64(buf), nil
+	return (uint64(buf[0]) << 0) |
+		(uint64(buf[1]) << 8) |
+		(uint64(buf[2]) << 16) |
+		(uint64(buf[3]) << 24) |
+		(uint64(buf[4]) << 32) |
+		(uint64(buf[5]) << 40) |
+		(uint64(buf[6]) << 48) |
+		(uint64(buf[7]) << 56), nil
 }
 
 func decodeUint32(buf []byte, r *bufio.Reader) (uint32, error) {
@@ -293,5 +311,8 @@ func decodeUint32(buf []byte, r *bufio.Reader) (uint32, error) {
 		return 0, err
 	}
 
-	return binary.LittleEndian.Uint32(buf), nil
+	return (uint32(buf[0]) << 0) |
+		(uint32(buf[1]) << 8) |
+		(uint32(buf[2]) << 16) |
+		(uint32(buf[3]) << 24), nil
 }
