@@ -31,7 +31,7 @@ func (ms *MemoryStore) SaveCheckpoint(from, to int64, w io.Writer) error {
 	return nil
 }
 
-func (l *level) saveCheckpoint(ms *MemoryStore, from, to int64, w io.Writer, buf []byte, metricsbuf []types.Float) ([]byte, error) {
+func (l *Level) saveCheckpoint(ms *MemoryStore, from, to int64, w io.Writer, buf []byte, metricsbuf []types.Float) ([]byte, error) {
 	var err error
 	l.lock.RLock()
 	defer l.lock.RUnlock()
@@ -112,7 +112,7 @@ func (ms *MemoryStore) LoadCheckpoint(r io.Reader) error {
 }
 
 // Blocks all other accesses for this level and all its sublevels!
-func (l *level) loadCheckpoint(ms *MemoryStore, r io.Reader, buf []byte) error {
+func (l *Level) loadCheckpoint(ms *MemoryStore, r io.Reader, buf []byte) error {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
@@ -158,8 +158,8 @@ func (l *level) loadCheckpoint(ms *MemoryStore, r io.Reader, buf []byte) error {
 			return fmt.Errorf("loading metric %#v: %w", key, err)
 		}
 
-		offset := ms.GetOffset(key)
-		if offset == -1 {
+		metricConf, ok := ms.GetMetricConf(key)
+		if !ok {
 			// Skip unkown metrics
 			ReleaseBytes(bytes)
 			continue
@@ -175,7 +175,7 @@ func (l *level) loadCheckpoint(ms *MemoryStore, r io.Reader, buf []byte) error {
 			checkpointed: true,
 		}
 
-		if prevchunk := l.metrics[offset]; prevchunk != nil {
+		if prevchunk := l.metrics[metricConf.Offset]; prevchunk != nil {
 			if prevchunk.end() > chunk.start {
 				return fmt.Errorf(
 					"loading metric %#v: loaded checkpoint overlaps with other chunks or is not loaded in correct order (%d - %d)",
@@ -183,9 +183,9 @@ func (l *level) loadCheckpoint(ms *MemoryStore, r io.Reader, buf []byte) error {
 			}
 			prevchunk.next = chunk
 			chunk.prev = prevchunk
-			l.metrics[offset] = chunk
+			l.metrics[metricConf.Offset] = chunk
 		} else {
-			l.metrics[offset] = chunk
+			l.metrics[metricConf.Offset] = chunk
 		}
 	}
 
@@ -198,11 +198,11 @@ func (l *level) loadCheckpoint(ms *MemoryStore, r io.Reader, buf []byte) error {
 			return err
 		}
 		if l.sublevels == nil {
-			l.sublevels = make(map[string]*level, n)
+			l.sublevels = make(map[string]*Level, n)
 		}
 		sublevel, ok := l.sublevels[key]
 		if !ok {
-			sublevel = &level{}
+			sublevel = &Level{}
 		}
 
 		if err = sublevel.loadCheckpoint(ms, r, buf); err != nil {

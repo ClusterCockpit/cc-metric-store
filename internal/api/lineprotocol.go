@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"context"
@@ -9,15 +9,27 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ClusterCockpit/cc-metric-store/internal/memstore"
+	"github.com/ClusterCockpit/cc-metric-store/internal/types"
 	"github.com/influxdata/line-protocol/v2/lineprotocol"
 	"github.com/nats-io/nats.go"
 )
 
-type Metric struct {
-	Name  string
-	Value Float
+type NatsConfig struct {
+	// Address of the nats server
+	Address string `json:"address"`
 
-	mc MetricConfig
+	// Username/Password, optional
+	Username string `json:"username"`
+	Password string `json:"password"`
+
+	Subscriptions []struct {
+		// Channel name
+		SubscribeTo string `json:"subscribe-to"`
+
+		// Allow lines without a cluster tag, use this as default, optional
+		ClusterTag string `json:"cluster-tag"`
+	} `json:"subscriptions"`
 }
 
 // Currently unused, could be used to send messages via raw TCP.
@@ -175,17 +187,17 @@ func reorder(buf, prefix []byte) []byte {
 
 // Decode lines using dec and make write calls to the MemoryStore.
 // If a line is missing its cluster tag, use clusterDefault as default.
-func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
+func decodeLine(memoryStore *memstore.MemoryStore, dec *lineprotocol.Decoder, clusterDefault string) error {
 	// Reduce allocations in loop:
 	t := time.Now()
-	metric, metricBuf := Metric{}, make([]byte, 0, 16)
+	metric, metricBuf := types.Metric{}, make([]byte, 0, 16)
 	selector := make([]string, 0, 4)
 	typeBuf, subTypeBuf := make([]byte, 0, 16), make([]byte, 0)
 
 	// Optimize for the case where all lines in a "batch" are about the same
 	// cluster and host. By using `WriteToLevel` (level = host), we do not need
 	// to take the root- and cluster-level lock as often.
-	var lvl *level = nil
+	var lvl *memstore.Level = nil
 	var prevCluster, prevHost string = "", ""
 
 	var ok bool
@@ -200,7 +212,7 @@ func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 		metricBuf = append(metricBuf[:0], rawmeasurement...)
 
 		// The go compiler optimizes map[string(byteslice)] lookups:
-		metric.mc, ok = memoryStore.metrics[string(rawmeasurement)]
+		metric.Conf, ok = memoryStore.GetMetricConf(string(rawmeasurement))
 		if !ok {
 			continue
 		}
@@ -292,11 +304,11 @@ func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 			}
 
 			if val.Kind() == lineprotocol.Float {
-				metric.Value = Float(val.FloatV())
+				metric.Value = types.Float(val.FloatV())
 			} else if val.Kind() == lineprotocol.Int {
-				metric.Value = Float(val.IntV())
+				metric.Value = types.Float(val.IntV())
 			} else if val.Kind() == lineprotocol.Uint {
-				metric.Value = Float(val.UintV())
+				metric.Value = types.Float(val.UintV())
 			} else {
 				return fmt.Errorf("unsupported value type in message: %s", val.Kind().String())
 			}
@@ -306,7 +318,7 @@ func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 			return err
 		}
 
-		if err := memoryStore.WriteToLevel(lvl, selector, t.Unix(), []Metric{metric}); err != nil {
+		if err := memoryStore.WriteToLevel(lvl, selector, t.Unix(), []types.Metric{metric}); err != nil {
 			return err
 		}
 	}
