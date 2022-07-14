@@ -16,15 +16,14 @@ type chunk struct {
 }
 
 func newChunk(ts, freq int64) *chunk {
-	b := &chunk{}
-	b.frequency = freq
-	b.start = ts - (freq / 2)
-	b.prev = nil
-	b.next = nil
-	b.checkpointed = false
-	b.data = RequestFloatSlice(bufferSizeInFloats)
-	b.data = b.data[:0]
-	return b
+	return &chunk{
+		frequency:    freq,
+		start:        ts - (freq / 2),
+		prev:         nil,
+		next:         nil,
+		checkpointed: false,
+		data:         RequestFloatSlice(bufferSizeInFloats)[:0],
+	}
 }
 
 func freeChunk(c *chunk) {

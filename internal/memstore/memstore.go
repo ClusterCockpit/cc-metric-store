@@ -91,6 +91,8 @@ func (l *level) free(t int64) (delme bool, n int) {
 type MemoryStore struct {
 	root level // root of the tree structure
 	// TODO...
+
+	metrics map[string]int // TODO...
 }
 
 func (ms *MemoryStore) GetOffset(metric string) int {
@@ -99,4 +101,8 @@ func (ms *MemoryStore) GetOffset(metric string) int {
 
 func (ms *MemoryStore) GetMetricForOffset(offset int) string {
 	return "" // TODO!
+}
+
+func (ms *MemoryStore) MinFrequency() int64 {
+	return 10 // TODO
 }

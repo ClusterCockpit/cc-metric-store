@@ -250,7 +250,7 @@ func encodeUint32(buf []byte, i uint32) []byte {
 		byte((i>>24)&0xff))
 }
 
-func decodeBytes(buf []byte, r *bufio.Reader) ([]byte, error) {
+func decodeBytes(buf []byte, r io.Reader) ([]byte, error) {
 	len, err := decodeUint32(buf, r)
 	if err != nil {
 		return nil, err
@@ -267,7 +267,7 @@ func decodeBytes(buf []byte, r *bufio.Reader) ([]byte, error) {
 	return bytes, nil
 }
 
-func decodeString(buf []byte, r *bufio.Reader) (string, error) {
+func decodeString(buf []byte, r io.Reader) (string, error) {
 	len, err := decodeUint32(buf, r)
 	if err != nil {
 		return "", err
@@ -286,7 +286,7 @@ func decodeString(buf []byte, r *bufio.Reader) (string, error) {
 	return string(bytes), nil
 }
 
-func decodeUint64(buf []byte, r *bufio.Reader) (uint64, error) {
+func decodeUint64(buf []byte, r io.Reader) (uint64, error) {
 	buf = buf[0:8]
 	_, err := io.ReadFull(r, buf)
 	if err != nil {
@@ -303,7 +303,7 @@ func decodeUint64(buf []byte, r *bufio.Reader) (uint64, error) {
 		(uint64(buf[7]) << 56), nil
 }
 
-func decodeUint32(buf []byte, r *bufio.Reader) (uint32, error) {
+func decodeUint32(buf []byte, r io.Reader) (uint32, error) {
 	buf = buf[0:4]
 	_, err := io.ReadFull(r, buf)
 	if err != nil {
