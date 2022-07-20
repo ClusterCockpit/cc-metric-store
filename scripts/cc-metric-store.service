@@ -11,6 +11,7 @@ User=clustercockpit
 Group=clustercockpit
 Restart=on-failure
 TimeoutStopSec=100
+LimitNOFILE=infinity
 ExecStart=/usr/bin/cc-metric-store --config ${CONF_FILE}
 
 [Install]
