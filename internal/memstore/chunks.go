@@ -72,8 +72,6 @@ func (c *chunk) firstWrite() int64 {
 	return c.start + (c.frequency / 2)
 }
 
-func (c *chunk) close() {}
-
 // func interpolate(idx int, data []Float) Float {
 // 	if idx == 0 || idx+1 == len(data) {
 // 		return NaN
