@@ -2,14 +2,13 @@
 
 [![Build & Test](https://github.com/ClusterCockpit/cc-metric-store/actions/workflows/test.yml/badge.svg)](https://github.com/ClusterCockpit/cc-metric-store/actions/workflows/test.yml)
 
-The cc-metric-store provides a simple in-memory time series database for storing metrics of cluster nodes at preconfigured intervals. It is meant to be used as part of the [ClusterCockpit suite](https://github.com/ClusterCockpit). As all data is kept in-memory (but written to disk as compressed JSON for long term storage), accessing it is very fast. It also provides aggregations over time *and* nodes/sockets/cpus.
+__*Why should I use this?*__
 
-There are major limitations: Data only gets written to disk at periodic checkpoints, not as soon as it is received.
+The cc-metric-store is a simple in-memory time series "database" (not really) for storing metrics of cluster nodes at preconfigured intervals. It is meant to be used as part of the [ClusterCockpit suite](https://github.com/ClusterCockpit) and uses [this format of the InfluxDB line protocol](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md) for writes. The APIs are not very generic and specially designed for the needs of ClusterCockpit, but can be generalised in the future.
 
-Go look at the `TODO.md` file and the [GitHub Issues](https://github.com/ClusterCockpit/cc-metric-store/issues) for a progress overview. Things work, but are not properly tested.
-The [NATS.io](https://nats.io/) based writing endpoint consumes messages in [this format of the InfluxDB line protocol](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md).
+Assuming a cluster of 1000 nodes of two sockets and 72 cores, 60 samples per minute, 8 bytes per sample, 20 metrics per node, 10 metrics per socket and 20 per core, the total memory consuption for the metrics of the last 48 hours is ~32 GiB. Regular HPC jobs are not allowed to run longer than 48 hours, and a finished job's metrics is stored elsewhere in the stack. This motivates the use of an in-memory TSDB.
 
-### REST API Endpoints
+This database also takes other shortcuts: There only is a single, hirachical index (`cluster` -> `host` -> ...), data is written to checkpoints regularly but there are no consitency guaranties, data is assumed to be inserted in an append-only manner (meaning only with increasing timestamps), and the exact time a measurement was taken is not stored, only in which interval it landed.
 
 The REST API is documented in [openapi.yaml](./openapi.yaml) in the OpenAPI 3.0 format.
 
@@ -141,3 +140,6 @@ curl -H "Authorization: Bearer $JWT" -D - "http://localhost:8080/api/query" -d "
 # ...
 ```
 
+### TODOs
+
+Write more tests and the things mentioned in the [internal's README.md](./internal/README.md).
