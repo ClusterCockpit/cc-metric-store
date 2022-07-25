@@ -18,6 +18,7 @@ var allocatorLock sync.Mutex
 var allocatorPool [][]byte
 
 func RequestBytes(size int) []byte {
+	requested := size
 	size = (size + bufferSizeInBytes - 1) / bufferSizeInBytes * bufferSizeInBytes
 	if size == bufferSizeInBytes {
 		allocatorLock.Lock()
@@ -31,16 +32,20 @@ func RequestBytes(size int) []byte {
 	}
 
 	pagesize := os.Getpagesize()
-	if size < pagesize || pagesize%size != 0 {
+	if size < pagesize || size%pagesize != 0 {
 		panic("page size and buffer size do not go with each other")
 	}
 
-	bytes, err := unix.Mmap(-1, 0, size, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANONYMOUS)
+	bytes, err := unix.Mmap(-1, 0, size, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANONYMOUS|unix.MAP_SHARED)
 	if err != nil {
-		panic(err)
+		panic("unix.Mmap failed: " + err.Error())
 	}
 
-	return bytes
+	if cap(bytes) != size {
+		panic("whoops?")
+	}
+
+	return bytes[:requested]
 }
 
 func ReleaseBytes(bytes []byte) {
