@@ -110,6 +110,35 @@ func (l *Level) free(t int64) (delme bool, n int) {
 	return len(l.metrics) == 0 && len(l.sublevels) == 0, n
 }
 
+// Return an estimate of how many values are stored for all metrics and sublevels between from and to.
+func (l *Level) countValues(from int64, to int64) int {
+	vals := 0
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+
+	for _, c := range l.metrics {
+		for c != nil {
+			if to < c.start || c.end() < from {
+				continue
+			} else if c.start < from {
+				vals += int((from - c.start) / c.frequency)
+			} else if from < c.start {
+				vals += int((c.start - from) / c.frequency)
+			} else {
+				vals += len(c.data)
+			}
+
+			c = c.prev
+		}
+	}
+
+	for _, sublevel := range l.sublevels {
+		vals += sublevel.countValues(from, to)
+	}
+
+	return vals
+}
+
 type MemoryStore struct {
 	root Level // root of the tree structure
 	// TODO...

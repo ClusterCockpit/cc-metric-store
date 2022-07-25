@@ -1,6 +1,8 @@
 package memstore
 
 import (
+	"errors"
+	"log"
 	"os"
 	"reflect"
 	"sync"
@@ -16,20 +18,26 @@ const bufferSizeInBytes int = bufferSizeInFloats * 8
 // The allocator rarely used, so a single big lock should be fine!
 var allocatorLock sync.Mutex
 var allocatorPool [][]byte
+var allocatorBatch []byte
 
 func RequestBytes(size int) []byte {
 	requested := size
 	size = (size + bufferSizeInBytes - 1) / bufferSizeInBytes * bufferSizeInBytes
-	if size == bufferSizeInBytes {
-		allocatorLock.Lock()
-		if len(allocatorPool) > 0 {
-			bytes := allocatorPool[len(allocatorPool)-1]
-			allocatorPool = allocatorPool[:len(allocatorPool)-1]
-			allocatorLock.Unlock()
-			return bytes
-		}
+
+	// Check allocation caches:
+	allocatorLock.Lock()
+	if len(allocatorPool) > 0 && size == bufferSizeInBytes {
+		bytes := allocatorPool[len(allocatorPool)-1]
+		allocatorPool = allocatorPool[:len(allocatorPool)-1]
 		allocatorLock.Unlock()
+		return bytes[:requested]
+	} else if cap(allocatorBatch) > size {
+		bytes := allocatorBatch[:0:size]
+		allocatorBatch = allocatorBatch[size:]
+		allocatorLock.Unlock()
+		return bytes[:requested]
 	}
+	allocatorLock.Unlock()
 
 	pagesize := os.Getpagesize()
 	if size < pagesize || size%pagesize != 0 {
@@ -46,6 +54,35 @@ func RequestBytes(size int) []byte {
 	}
 
 	return bytes[:requested]
+}
+
+func FillAllocatorCache(estimate int) error {
+	size := (estimate + bufferSizeInBytes - 1) / bufferSizeInBytes * bufferSizeInBytes
+	pagesize := os.Getpagesize()
+	if size < pagesize || size%pagesize != 0 {
+		return errors.New("estimate to small of buffer size not page size compatible")
+	}
+
+	allocatorLock.Lock()
+	defer allocatorLock.Unlock()
+
+	if len(allocatorBatch) > 0 {
+		n := len(allocatorBatch) / bufferSizeInBytes
+		for i := 0; i < n; i++ {
+			chunk := allocatorBatch[i*bufferSizeInBytes : i*bufferSizeInBytes+bufferSizeInBytes]
+			allocatorPool = append(allocatorPool, chunk[0:0:bufferSizeInBytes])
+		}
+		allocatorBatch = nil
+	}
+
+	bytes, err := unix.Mmap(-1, 0, size, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANONYMOUS|unix.MAP_SHARED)
+	if err != nil {
+		panic("unix.Mmap failed: " + err.Error())
+	}
+
+	log.Printf("batch-allocated %d bytes", cap(bytes))
+	allocatorBatch = bytes
+	return nil
 }
 
 func ReleaseBytes(bytes []byte) {

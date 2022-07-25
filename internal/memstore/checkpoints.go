@@ -42,6 +42,7 @@ func (c *Checkpoint) Serialize(w io.Writer) error {
 	buf = encodeBytes(buf, c.Reserved)
 	buf = encodeUint64(buf, c.From)
 	buf = encodeUint64(buf, c.To)
+	buf = encodeUint64(buf, 0) // Estimate zero for non-streaming checkpoints
 
 	// The rest:
 	var err error
@@ -127,6 +128,9 @@ func (c *Checkpoint) Deserialize(r *bufio.Reader) error {
 		return err
 	}
 	if c.To, err = decodeUint64(buf, r); err != nil {
+		return err
+	}
+	if _, err = decodeUint64(buf, r); err != nil { // Estimate ignored here
 		return err
 	}
 

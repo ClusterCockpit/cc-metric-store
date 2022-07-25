@@ -17,6 +17,7 @@ func (ms *MemoryStore) SaveCheckpoint(from, to int64, w io.Writer) error {
 	buf = encodeBytes(buf, nil)
 	buf = encodeUint64(buf, uint64(from))
 	buf = encodeUint64(buf, uint64(to))
+	buf = encodeUint64(buf, uint64(ms.root.countValues(from, to)))
 
 	metricsbuf := make([]types.Float, 0, (to-from)/ms.MinFrequency()+1)
 	var err error
@@ -121,6 +122,13 @@ func (ms *MemoryStore) LoadCheckpoint(r io.Reader) error {
 	}
 	if _, err := decodeUint64(buf, r); err != nil { // To
 		return err
+	}
+	if valueEstimate, err := decodeUint64(buf, r); err != nil {
+		return err
+	} else {
+		if err := FillAllocatorCache(int(valueEstimate) * 8); err != nil {
+			return nil
+		}
 	}
 
 	if err := ms.root.loadCheckpoint(ms, r, buf); err != nil {
