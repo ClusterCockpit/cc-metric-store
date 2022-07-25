@@ -5,11 +5,65 @@ import (
 	"bytes"
 	"encoding/json"
 	"log"
+	"math"
 	"reflect"
 	"testing"
 
 	"github.com/ClusterCockpit/cc-metric-store/internal/types"
 )
+
+func createTestStore(t *testing.T, withData bool) *MemoryStore {
+	ms := NewMemoryStore(map[string]types.MetricConfig{
+		"flops": {Frequency: 1},
+		"membw": {Frequency: 1},
+		"ipc":   {Frequency: 2},
+	})
+
+	if !withData {
+		return ms
+	}
+
+	n := 1000
+	sel := []string{"hello", "world"}
+	for i := 0; i < n; i++ {
+		if err := ms.Write(sel, int64(i), []types.Metric{
+			{Name: "flops", Value: types.Float(math.Sin(float64(i) * 0.1))},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// n := 3000
+	// x1, x2, x3 := 0.0, 1.1, 2.2
+	// d1, d2, d3 := 0.05, 0.1, 0.2
+
+	// sel1, sel2, sel3 := []string{"cluster"}, []string{"cluster", "host1"}, []string{"cluster", "host2", "cpu0"}
+	// for i := 0; i < n; i++ {
+	// 	ms.Write(sel1, int64(i), []types.Metric{
+	// 		{Name: "flops", Value: types.Float(x1)},
+	// 		{Name: "membw", Value: types.Float(x2)},
+	// 		{Name: "ipc", Value: types.Float(x3)},
+	// 	})
+
+	// 	ms.Write(sel2, int64(i), []types.Metric{
+	// 		{Name: "flops", Value: types.Float(x1) + 1.},
+	// 		{Name: "membw", Value: types.Float(x2) + 2.},
+	// 		{Name: "ipc", Value: types.Float(x3) + 3.},
+	// 	})
+
+	// 	ms.Write(sel3, int64(i)*2, []types.Metric{
+	// 		{Name: "flops", Value: types.Float(x1) + 1.},
+	// 		{Name: "membw", Value: types.Float(x2) + 2.},
+	// 		{Name: "ipc", Value: types.Float(x3) + 3.},
+	// 	})
+
+	// 	x1 += d1
+	// 	x2 += d2
+	// 	x3 += d3
+	// }
+
+	return ms
+}
 
 func TestIntEncoding(t *testing.T) {
 	buf := make([]byte, 0, 100)
@@ -106,4 +160,46 @@ func TestIdentity(t *testing.T) {
 		log.Printf("b: %#v", string(output_json))
 		t.Fatal("x != deserialize(serialize(x))")
 	}
+}
+
+func TestStreamingCheckpointIndentity(t *testing.T) {
+	disk := &bytes.Buffer{}
+	ms1 := createTestStore(t, true)
+	if err := ms1.SaveCheckpoint(0, 7000, disk); err != nil {
+		t.Fatal("saving checkpoint failed: ", err)
+	}
+
+	// fmt.Printf("disk: %#v\n", disk.Bytes())
+
+	ms2 := createTestStore(t, false)
+	if err := ms2.LoadCheckpoint(disk); err != nil {
+		t.Fatal("loading checkpoint failed: ", err)
+	}
+
+	arr1, from1, to1, err := ms1.Read(types.Selector{{String: "hello"}, {String: "world"}}, "flops", 0, 7000)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	arr2, from2, to2, err := ms2.Read(types.Selector{{String: "hello"}, {String: "world"}}, "flops", 0, 7000)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(arr1, arr2) || from1 != from2 || to1 != to2 {
+		t.Fatal("x != deserialize(serialize(x))")
+	}
+
+	// if !reflect.DeepEqual(ms1, ms2) {
+	// 	// fmt.Printf("ms1.root: %#v\n", ms1.root)
+	// 	// fmt.Printf("ms2.root: %#v\n", ms2.root)
+	// 	// fmt.Printf("ms1.root.sublevels['hello']: %#v\n", *ms1.root.sublevels["hello"])
+	// 	// fmt.Printf("ms2.root.sublevels['hello']: %#v\n", *ms2.root.sublevels["hello"])
+	// 	// fmt.Printf("ms1.root.sublevels['hello'].sublevels['world']: %#v\n", *ms1.root.sublevels["hello"].sublevels["world"])
+	// 	// fmt.Printf("ms2.root.sublevels['hello'].sublevels['world']: %#v\n", *ms2.root.sublevels["hello"].sublevels["world"])
+	// 	// fmt.Printf("ms1.root.sublevels['hello'].sublevels['world'].metrics[0]: %#v\n", *ms1.root.sublevels["hello"].sublevels["world"].metrics[0])
+	// 	// fmt.Printf("ms2.root.sublevels['hello'].sublevels['world'].metrics[0]: %#v\n", *ms2.root.sublevels["hello"].sublevels["world"].metrics[0])
+
+	// 	t.Fatal("x != deserialize(serialize(x))")
+	// }
 }

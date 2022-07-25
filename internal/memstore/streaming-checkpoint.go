@@ -31,6 +31,7 @@ func (ms *MemoryStore) SaveCheckpoint(from, to int64, w io.Writer) error {
 	return nil
 }
 
+// Writes a checkpoint for the current level to buf, buf to w if enough bytes are reached, and returns buf.
 func (l *Level) saveCheckpoint(ms *MemoryStore, from, to int64, w io.Writer, buf []byte, metricsbuf []types.Float) ([]byte, error) {
 	var err error
 	l.lock.RLock()
@@ -39,26 +40,37 @@ func (l *Level) saveCheckpoint(ms *MemoryStore, from, to int64, w io.Writer, buf
 	buf = encodeBytes(buf, nil) // Reserved
 
 	// Metrics:
-	buf = encodeUint32(buf, uint32(len(l.metrics)))
+	n := 0
+	for _, c := range l.metrics {
+		if c != nil {
+			n += 1
+		}
+	}
+
+	buf = encodeUint32(buf, uint32(n))
 	for i, c := range l.metrics {
+		if c == nil {
+			continue
+		}
+
 		key := ms.GetMetricForOffset(i)
 		buf = encodeString(buf, key)
 
 		// Metric
 		buf = encodeBytes(buf, nil) // Reserved
 
-		metricsbuf = metricsbuf[:(to-from)/c.frequency+1]
+		metrics := metricsbuf[:(to-from)/c.frequency+1]
 		var cfrom int64
-		if metricsbuf, cfrom, _, err = c.read(from, to, metricsbuf); err != nil {
+		if metrics, cfrom, _, err = c.read(from, to, metrics); err != nil {
 			return nil, err
 		}
 		buf = encodeUint64(buf, uint64(c.frequency))
 		buf = encodeUint64(buf, uint64(cfrom))
-		buf = encodeUint32(buf, uint32(len(metricsbuf)))
+		buf = encodeUint32(buf, uint32(len(metrics)))
 
 		var x types.Float
 		elmsize := unsafe.Sizeof(x)
-		sh := (*reflect.SliceHeader)(unsafe.Pointer(&metricsbuf))
+		sh := (*reflect.SliceHeader)(unsafe.Pointer(&metrics))
 		bytes := unsafe.Slice((*byte)(unsafe.Pointer(sh.Data)), sh.Len*int(elmsize))
 		buf = append(buf, bytes...)
 
@@ -68,6 +80,13 @@ func (l *Level) saveCheckpoint(ms *MemoryStore, from, to int64, w io.Writer, buf
 			}
 
 			buf = buf[0:]
+		}
+
+		for c != nil {
+			if c.end() <= to {
+				c.checkpointed = true
+			}
+			c = c.prev
 		}
 	}
 
@@ -127,12 +146,12 @@ func (l *Level) loadCheckpoint(ms *MemoryStore, r io.Reader, buf []byte) error {
 	if n, err = decodeUint32(buf, r); err != nil {
 		return err
 	}
+	if l.metrics == nil {
+		l.metrics = make([]*chunk, len(ms.metrics))
+	}
 	for i := 0; i < int(n); i++ {
 		if key, err = decodeString(buf, r); err != nil {
 			return err
-		}
-		if l.metrics == nil {
-			l.metrics = make([]*chunk, len(ms.metrics))
 		}
 
 		// Metric:
@@ -149,6 +168,9 @@ func (l *Level) loadCheckpoint(ms *MemoryStore, r io.Reader, buf []byte) error {
 		numelements, err := decodeUint32(buf, r)
 		if err != nil {
 			return err
+		}
+		if numelements == 0 {
+			continue
 		}
 
 		var x types.Float

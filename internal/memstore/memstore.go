@@ -2,6 +2,7 @@ package memstore
 
 import (
 	"errors"
+	"math"
 	"sync"
 
 	"github.com/ClusterCockpit/cc-metric-store/internal/types"
@@ -148,11 +149,22 @@ func (ms *MemoryStore) GetMetricConf(metric string) (types.MetricConfig, bool) {
 }
 
 func (ms *MemoryStore) GetMetricForOffset(offset int) string {
-	return "" // TODO!
+	for name, mc := range ms.metrics {
+		if mc.Offset == offset {
+			return name
+		}
+	}
+	return ""
 }
 
 func (ms *MemoryStore) MinFrequency() int64 {
-	return 10 // TODO
+	min := int64(math.MaxInt64)
+	for _, mc := range ms.metrics {
+		if mc.Frequency < min {
+			min = mc.Frequency
+		}
+	}
+	return min
 }
 
 func (m *MemoryStore) GetLevel(selector []string) *Level {
@@ -186,6 +198,35 @@ func (m *MemoryStore) WriteToLevel(l *Level, selector []string, ts int64, metric
 			l.metrics[metric.Conf.Offset] = nc
 		}
 	}
+	return nil
+}
+
+func (m *MemoryStore) Write(selector []string, ts int64, metrics []types.Metric) error {
+	l := m.root.findLevelOrCreate(selector, len(m.metrics))
+	for _, metric := range metrics {
+		mc, ok := m.GetMetricConf(metric.Name)
+		if !ok {
+			continue
+		}
+
+		c := l.metrics[mc.Offset]
+		if c == nil {
+			// First write to this metric and level
+			c = newChunk(ts, mc.Frequency)
+			l.metrics[mc.Offset] = c
+		}
+
+		nc, err := c.write(ts, metric.Value)
+		if err != nil {
+			return err
+		}
+
+		// Last write started a new chunk...
+		if c != nc {
+			l.metrics[mc.Offset] = nc
+		}
+	}
+
 	return nil
 }
 
