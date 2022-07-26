@@ -1,4 +1,4 @@
-package main
+package apiv1
 
 import (
 	"bufio"
@@ -7,29 +7,38 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"math"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/ClusterCockpit/cc-metric-store/internal/api"
+	"github.com/ClusterCockpit/cc-metric-store/internal/memstore"
+	"github.com/ClusterCockpit/cc-metric-store/internal/types"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/mux"
 	"github.com/influxdata/line-protocol/v2/lineprotocol"
 )
 
 type ApiMetricData struct {
-	Error *string    `json:"error,omitempty"`
-	From  int64      `json:"from"`
-	To    int64      `json:"to"`
-	Data  FloatArray `json:"data,omitempty"`
-	Avg   Float      `json:"avg"`
-	Min   Float      `json:"min"`
-	Max   Float      `json:"max"`
+	Error *string          `json:"error,omitempty"`
+	From  int64            `json:"from"`
+	To    int64            `json:"to"`
+	Data  types.FloatArray `json:"data,omitempty"`
+	Avg   types.Float      `json:"avg"`
+	Min   types.Float      `json:"min"`
+	Max   types.Float      `json:"max"`
+}
+
+type HttpApi struct {
+	MemoryStore       *memstore.MemoryStore
+	server            *http.Server
+	PublicKey         string
+	Address           string
+	CertFile, KeyFile string
 }
 
 // TODO: Optimize this, just like the stats endpoint!
@@ -49,15 +58,15 @@ func (data *ApiMetricData) AddStats() {
 
 	if n > 0 {
 		avg := sum / float64(n)
-		data.Avg = Float(avg)
-		data.Min = Float(min)
-		data.Max = Float(max)
+		data.Avg = types.Float(avg)
+		data.Min = types.Float(min)
+		data.Max = types.Float(max)
 	} else {
-		data.Avg, data.Min, data.Max = NaN, NaN, NaN
+		data.Avg, data.Min, data.Max = types.NaN, types.NaN, types.NaN
 	}
 }
 
-func (data *ApiMetricData) ScaleBy(f Float) {
+func (data *ApiMetricData) ScaleBy(f types.Float) {
 	if f == 0 || f == 1 {
 		return
 	}
@@ -70,17 +79,17 @@ func (data *ApiMetricData) ScaleBy(f Float) {
 	}
 }
 
-func (data *ApiMetricData) PadDataWithNull(from, to int64, metric string) {
-	minfo, ok := memoryStore.metrics[metric]
+func (ha *HttpApi) padWithNaNs(data *ApiMetricData, metric string, from, to int64) {
+	mc, ok := ha.MemoryStore.GetMetricConf(metric)
 	if !ok {
 		return
 	}
 
-	if (data.From / minfo.Frequency) > (from / minfo.Frequency) {
-		padfront := int((data.From / minfo.Frequency) - (from / minfo.Frequency))
-		ndata := make([]Float, 0, padfront+len(data.Data))
+	if (data.From / mc.Frequency) > (from / mc.Frequency) {
+		padfront := int((data.From / mc.Frequency) - (from / mc.Frequency))
+		ndata := make([]types.Float, 0, padfront+len(data.Data))
 		for i := 0; i < padfront; i++ {
-			ndata = append(ndata, NaN)
+			ndata = append(ndata, types.NaN)
 		}
 		for j := 0; j < len(data.Data); j++ {
 			ndata = append(ndata, data.Data[j])
@@ -89,55 +98,7 @@ func (data *ApiMetricData) PadDataWithNull(from, to int64, metric string) {
 	}
 }
 
-func handleFree(rw http.ResponseWriter, r *http.Request) {
-	rawTo := r.URL.Query().Get("to")
-	if rawTo == "" {
-		http.Error(rw, "'to' is a required query parameter", http.StatusBadRequest)
-		return
-	}
-
-	to, err := strconv.ParseInt(rawTo, 10, 64)
-	if err != nil {
-		http.Error(rw, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	// TODO: lastCheckpoint might be modified by different go-routines.
-	// Load it using the sync/atomic package?
-	freeUpTo := lastCheckpoint.Unix()
-	if to < freeUpTo {
-		freeUpTo = to
-	}
-
-	if r.Method != http.MethodPost {
-		http.Error(rw, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	bodyDec := json.NewDecoder(r.Body)
-	var selectors [][]string
-	err = bodyDec.Decode(&selectors)
-	if err != nil {
-		http.Error(rw, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	n := 0
-	for _, sel := range selectors {
-		bn, err := memoryStore.Free(sel, freeUpTo)
-		if err != nil {
-			http.Error(rw, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		n += bn
-	}
-
-	rw.WriteHeader(http.StatusOK)
-	rw.Write([]byte(fmt.Sprintf("buffers freed: %d\n", n)))
-}
-
-func handleWrite(rw http.ResponseWriter, r *http.Request) {
+func (ha *HttpApi) handleWrite(rw http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(rw, "Method Not Allowed", http.StatusMethodNotAllowed)
 		return
@@ -150,26 +111,8 @@ func handleWrite(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if debugDump != io.Discard {
-		now := time.Now()
-		msg := make([]byte, 0, 512)
-		msg = append(msg, "\n--- local unix time: "...)
-		msg = strconv.AppendInt(msg, now.Unix(), 10)
-		msg = append(msg, " ---\n"...)
-
-		debugDumpLock.Lock()
-		defer debugDumpLock.Unlock()
-		if _, err := debugDump.Write(msg); err != nil {
-			log.Printf("error while writing to debug dump: %s", err.Error())
-		}
-		if _, err := debugDump.Write(bytes); err != nil {
-			log.Printf("error while writing to debug dump: %s", err.Error())
-		}
-		return
-	}
-
 	dec := lineprotocol.NewDecoderWithBytes(bytes)
-	if err := decodeLine(dec, r.URL.Query().Get("cluster")); err != nil {
+	if err := api.DecodeLine(ha.MemoryStore, dec, r.URL.Query().Get("cluster")); err != nil {
 		log.Printf("/api/write error: %s", err.Error())
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
@@ -194,17 +137,17 @@ type ApiQueryResponse struct {
 }
 
 type ApiQuery struct {
-	Metric      string   `json:"metric"`
-	Hostname    string   `json:"host"`
-	Aggregate   bool     `json:"aggreg"`
-	ScaleFactor Float    `json:"scale-by,omitempty"`
-	Type        *string  `json:"type,omitempty"`
-	TypeIds     []string `json:"type-ids,omitempty"`
-	SubType     *string  `json:"subtype,omitempty"`
-	SubTypeIds  []string `json:"subtype-ids,omitempty"`
+	Metric      string      `json:"metric"`
+	Hostname    string      `json:"host"`
+	Aggregate   bool        `json:"aggreg"`
+	ScaleFactor types.Float `json:"scale-by,omitempty"`
+	Type        *string     `json:"type,omitempty"`
+	TypeIds     []string    `json:"type-ids,omitempty"`
+	SubType     *string     `json:"subtype,omitempty"`
+	SubTypeIds  []string    `json:"subtype-ids,omitempty"`
 }
 
-func handleQuery(rw http.ResponseWriter, r *http.Request) {
+func (ha *HttpApi) handleQuery(rw http.ResponseWriter, r *http.Request) {
 	var err error
 	var req ApiQueryRequest = ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -216,7 +159,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 		Results: make([][]ApiMetricData, 0, len(req.Queries)),
 	}
 	if req.ForAllNodes != nil {
-		nodes := memoryStore.ListChildren([]string{req.Cluster})
+		nodes := ha.MemoryStore.ListChildren([]string{req.Cluster})
 		for _, node := range nodes {
 			for _, metric := range req.ForAllNodes {
 				q := ApiQuery{
@@ -230,29 +173,29 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, query := range req.Queries {
-		sels := make([]Selector, 0, 1)
+		sels := make([]types.Selector, 0, 1)
 		if query.Aggregate || query.Type == nil {
-			sel := Selector{{String: req.Cluster}, {String: query.Hostname}}
+			sel := types.Selector{{String: req.Cluster}, {String: query.Hostname}}
 			if query.Type != nil {
 				if len(query.TypeIds) == 1 {
-					sel = append(sel, SelectorElement{String: *query.Type + query.TypeIds[0]})
+					sel = append(sel, types.SelectorElement{String: *query.Type + query.TypeIds[0]})
 				} else {
 					ids := make([]string, len(query.TypeIds))
 					for i, id := range query.TypeIds {
 						ids[i] = *query.Type + id
 					}
-					sel = append(sel, SelectorElement{Group: ids})
+					sel = append(sel, types.SelectorElement{Group: ids})
 				}
 
 				if query.SubType != nil {
 					if len(query.SubTypeIds) == 1 {
-						sel = append(sel, SelectorElement{String: *query.SubType + query.SubTypeIds[0]})
+						sel = append(sel, types.SelectorElement{String: *query.SubType + query.SubTypeIds[0]})
 					} else {
 						ids := make([]string, len(query.SubTypeIds))
 						for i, id := range query.SubTypeIds {
 							ids[i] = *query.SubType + id
 						}
-						sel = append(sel, SelectorElement{Group: ids})
+						sel = append(sel, types.SelectorElement{Group: ids})
 					}
 				}
 			}
@@ -261,13 +204,13 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 			for _, typeId := range query.TypeIds {
 				if query.SubType != nil {
 					for _, subTypeId := range query.SubTypeIds {
-						sels = append(sels, Selector{
+						sels = append(sels, types.Selector{
 							{String: req.Cluster}, {String: query.Hostname},
 							{String: *query.Type + typeId},
 							{String: *query.SubType + subTypeId}})
 					}
 				} else {
-					sels = append(sels, Selector{
+					sels = append(sels, types.Selector{
 						{String: req.Cluster},
 						{String: query.Hostname},
 						{String: *query.Type + typeId}})
@@ -281,7 +224,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 		res := make([]ApiMetricData, 0, len(sels))
 		for _, sel := range sels {
 			data := ApiMetricData{}
-			data.Data, data.From, data.To, err = memoryStore.Read(sel, query.Metric, req.From, req.To)
+			data.Data, data.From, data.To, err = ha.MemoryStore.Read(sel, query.Metric, req.From, req.To)
 			// log.Printf("data: %#v, %#v, %#v, %#v", data.Data, data.From, data.To, err)
 			if err != nil {
 				msg := err.Error()
@@ -297,7 +240,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 				data.ScaleBy(query.ScaleFactor)
 			}
 			if req.WithPadding {
-				data.PadDataWithNull(req.From, req.To, query.Metric)
+				ha.padWithNaNs(&data, query.Metric, req.From, req.To)
 			}
 			if !req.WithData {
 				data.Data = nil
@@ -316,7 +259,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler {
+func (ha *HttpApi) authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler {
 	cacheLock := sync.RWMutex{}
 	cache := map[string]*jwt.Token{}
 
@@ -362,12 +305,11 @@ func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler
 	})
 }
 
-func StartApiServer(ctx context.Context, httpConfig *HttpConfig) error {
+func (ha *HttpApi) StartServer(ctx context.Context) error {
 	r := mux.NewRouter()
 
-	r.HandleFunc("/api/free", handleFree)
-	r.HandleFunc("/api/write", handleWrite)
-	r.HandleFunc("/api/query", handleQuery)
+	r.HandleFunc("/api/write", ha.handleWrite)
+	r.HandleFunc("/api/query", ha.handleQuery)
 	r.HandleFunc("/api/debug", func(rw http.ResponseWriter, r *http.Request) {
 		raw := r.URL.Query().Get("selector")
 		selector := []string{}
@@ -375,7 +317,7 @@ func StartApiServer(ctx context.Context, httpConfig *HttpConfig) error {
 			selector = strings.Split(raw, ":")
 		}
 
-		if err := memoryStore.DebugDump(bufio.NewWriter(rw), selector); err != nil {
+		if err := ha.MemoryStore.DebugDump(bufio.NewWriter(rw), selector); err != nil {
 			rw.WriteHeader(http.StatusBadRequest)
 			rw.Write([]byte(err.Error()))
 		}
@@ -383,29 +325,30 @@ func StartApiServer(ctx context.Context, httpConfig *HttpConfig) error {
 
 	server := &http.Server{
 		Handler:      r,
-		Addr:         httpConfig.Address,
+		Addr:         ha.Address,
 		WriteTimeout: 30 * time.Second,
 		ReadTimeout:  30 * time.Second,
 	}
+	ha.server = server
 
-	if len(conf.JwtPublicKey) > 0 {
-		buf, err := base64.StdEncoding.DecodeString(conf.JwtPublicKey)
+	if len(ha.PublicKey) > 0 {
+		buf, err := base64.StdEncoding.DecodeString(ha.PublicKey)
 		if err != nil {
 			return err
 		}
 		publicKey := ed25519.PublicKey(buf)
-		server.Handler = authentication(server.Handler, publicKey)
+		server.Handler = ha.authentication(server.Handler, publicKey)
 	}
 
 	go func() {
-		if httpConfig.CertFile != "" && httpConfig.KeyFile != "" {
-			log.Printf("API https endpoint listening on '%s'\n", httpConfig.Address)
-			err := server.ListenAndServeTLS(httpConfig.CertFile, httpConfig.KeyFile)
+		if ha.CertFile != "" && ha.KeyFile != "" {
+			log.Printf("API https endpoint listening on '%s'\n", ha.Address)
+			err := server.ListenAndServeTLS(ha.CertFile, ha.KeyFile)
 			if err != nil && err != http.ErrServerClosed {
 				log.Println(err)
 			}
 		} else {
-			log.Printf("API http endpoint listening on '%s'\n", httpConfig.Address)
+			log.Printf("API http endpoint listening on '%s'\n", ha.Address)
 			err := server.ListenAndServe()
 			if err != nil && err != http.ErrServerClosed {
 				log.Println(err)
