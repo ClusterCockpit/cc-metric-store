@@ -124,7 +124,7 @@ func (c *chunk) read(from, to int64, data []types.Float) ([]types.Float, int64, 
 	return data[:i], from, t, nil
 }
 
-func (c *chunk) stats(from, to int64, data []types.Float) (types.Stats, int64, int64, error) {
+func (c *chunk) stats(from, to int64) (types.Stats, int64, int64, error) {
 	stats := types.Stats{
 		Samples: 0,
 		Min:     types.Float(math.MaxFloat64),
@@ -134,7 +134,7 @@ func (c *chunk) stats(from, to int64, data []types.Float) (types.Stats, int64, i
 
 	if from < c.firstWrite() {
 		if c.prev != nil {
-			return c.prev.stats(from, to, data)
+			return c.prev.stats(from, to)
 		}
 		from = c.firstWrite()
 	}

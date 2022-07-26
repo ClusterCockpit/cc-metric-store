@@ -1,4 +1,4 @@
-package main
+package memstore
 
 import (
 	"fmt"
@@ -6,20 +6,22 @@ import (
 	"math/rand"
 	"sync"
 	"testing"
+
+	"github.com/ClusterCockpit/cc-metric-store/internal/types"
 )
 
 func TestMemoryStoreBasics(t *testing.T) {
 	frequency := int64(10)
 	start, count := int64(100), int64(5000)
-	store := NewMemoryStore(map[string]MetricConfig{
+	store := NewMemoryStore(map[string]types.MetricConfig{
 		"a": {Frequency: frequency},
 		"b": {Frequency: frequency * 2},
 	})
 
 	for i := int64(0); i < count; i++ {
-		err := store.Write([]string{"testhost"}, start+i*frequency, []Metric{
-			{Name: "a", Value: Float(i)},
-			{Name: "b", Value: Float(i / 2)},
+		err := store.Write([]string{"testhost"}, start+i*frequency, []types.Metric{
+			{Name: "a", Value: types.Float(i)},
+			{Name: "b", Value: types.Float(i / 2)},
 		})
 		if err != nil {
 			t.Error(err)
@@ -27,7 +29,7 @@ func TestMemoryStoreBasics(t *testing.T) {
 		}
 	}
 
-	sel := Selector{{String: "testhost"}}
+	sel := types.Selector{{String: "testhost"}}
 	adata, from, to, err := store.Read(sel, "a", start, start+count*frequency)
 	if err != nil || from != start || to != start+count*frequency {
 		t.Error(err)
@@ -45,14 +47,14 @@ func TestMemoryStoreBasics(t *testing.T) {
 	}
 
 	for i := 0; i < int(count); i++ {
-		if adata[i] != Float(i) {
-			t.Errorf("incorrect value for metric a (%f vs. %f)", adata[i], Float(i))
+		if adata[i] != types.Float(i) {
+			t.Errorf("incorrect value for metric a (%f vs. %f)", adata[i], types.Float(i))
 			return
 		}
 	}
 
 	for i := 0; i < int(count/2); i++ {
-		if bdata[i] != Float(i) && bdata[i] != Float(i-1) {
+		if bdata[i] != types.Float(i) && bdata[i] != types.Float(i-1) {
 			t.Errorf("incorrect value for metric b (%f) at index %d", bdata[i], i)
 			return
 		}
@@ -62,8 +64,8 @@ func TestMemoryStoreBasics(t *testing.T) {
 
 func TestMemoryStoreTooMuchWrites(t *testing.T) {
 	frequency := int64(10)
-	count := BUFFER_CAP*3 + 10
-	store := NewMemoryStore(map[string]MetricConfig{
+	count := bufferSizeInFloats*3 + 10
+	store := NewMemoryStore(map[string]types.MetricConfig{
 		"a": {Frequency: frequency},
 		"b": {Frequency: frequency * 2},
 		"c": {Frequency: frequency / 2},
@@ -72,33 +74,33 @@ func TestMemoryStoreTooMuchWrites(t *testing.T) {
 
 	start := int64(100)
 	for i := 0; i < count; i++ {
-		if err := store.Write([]string{"test"}, start+int64(i)*frequency, []Metric{
-			{Name: "a", Value: Float(i)},
-			{Name: "b", Value: Float(i / 2)},
-			{Name: "c", Value: Float(i * 2)},
-			{Name: "d", Value: Float(i / 3)},
+		if err := store.Write([]string{"test"}, start+int64(i)*frequency, []types.Metric{
+			{Name: "a", Value: types.Float(i)},
+			{Name: "b", Value: types.Float(i / 2)},
+			{Name: "c", Value: types.Float(i * 2)},
+			{Name: "d", Value: types.Float(i / 3)},
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	end := start + int64(count)*frequency
-	data, from, to, err := store.Read(Selector{{String: "test"}}, "a", start, end)
+	data, from, to, err := store.Read(types.Selector{{String: "test"}}, "a", start, end)
 	if len(data) != count || from != start || to != end || err != nil {
 		t.Fatalf("a: err=%#v, from=%d, to=%d, data=%#v\n", err, from, to, data)
 	}
 
-	data, from, to, err = store.Read(Selector{{String: "test"}}, "b", start, end)
+	data, from, to, err = store.Read(types.Selector{{String: "test"}}, "b", start, end)
 	if len(data) != count/2 || from != start || to != end || err != nil {
 		t.Fatalf("b: err=%#v, from=%d, to=%d, data=%#v\n", err, from, to, data)
 	}
 
-	data, from, to, err = store.Read(Selector{{String: "test"}}, "c", start, end)
+	data, from, to, err = store.Read(types.Selector{{String: "test"}}, "c", start, end)
 	if len(data) != count*2-1 || from != start || to != end-frequency/2 || err != nil {
 		t.Fatalf("c: err=%#v, from=%d, to=%d, data=%#v\n", err, from, to, data)
 	}
 
-	data, from, to, err = store.Read(Selector{{String: "test"}}, "d", start, end)
+	data, from, to, err = store.Read(types.Selector{{String: "test"}}, "d", start, end)
 	if len(data) != count/3+1 || from != start || to != end+frequency*2 || err != nil {
 		t.Errorf("expected: err=nil, from=%d, to=%d, len(data)=%d\n", start, end+frequency*2, count/3)
 		t.Fatalf("d: err=%#v, from=%d, to=%d, data=%#v\n", err, from, to, data)
@@ -108,19 +110,19 @@ func TestMemoryStoreTooMuchWrites(t *testing.T) {
 func TestMemoryStoreOutOfBounds(t *testing.T) {
 	count := 2000
 	toffset := 1000
-	store := NewMemoryStore(map[string]MetricConfig{
+	store := NewMemoryStore(map[string]types.MetricConfig{
 		"a": {Frequency: 60},
 	})
 
 	for i := 0; i < count; i++ {
-		if err := store.Write([]string{"cluster", "host", "cpu"}, int64(toffset+i*60), []Metric{
-			{Name: "a", Value: Float(i)},
+		if err := store.Write([]string{"cluster", "host", "cpu"}, int64(toffset+i*60), []types.Metric{
+			{Name: "a", Value: types.Float(i)},
 		}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	sel := Selector{{String: "cluster"}, {String: "host"}, {String: "cpu"}}
+	sel := types.Selector{{String: "cluster"}, {String: "host"}, {String: "cpu"}}
 	data, from, to, err := store.Read(sel, "a", 500, int64(toffset+count*60+500))
 	if err != nil {
 		t.Fatal(err)
@@ -130,9 +132,9 @@ func TestMemoryStoreOutOfBounds(t *testing.T) {
 		t.Fatalf("Got %d-%d, expected %d-%d", from, to, toffset, toffset+count*60)
 	}
 
-	if len(data) != count || data[0] != 0 || data[len(data)-1] != Float((count-1)) {
+	if len(data) != count || data[0] != 0 || data[len(data)-1] != types.Float((count-1)) {
 		t.Fatalf("Wrong data (got: %d, %f, %f, expected: %d, %f, %f)",
-			len(data), data[0], data[len(data)-1], count, 0., Float(count-1))
+			len(data), data[0], data[len(data)-1], count, 0., types.Float(count-1))
 	}
 
 	testfrom, testlen := int64(100000000), int64(10000)
@@ -150,7 +152,7 @@ func TestMemoryStoreOutOfBounds(t *testing.T) {
 
 func TestMemoryStoreMissingDatapoints(t *testing.T) {
 	count := 3000
-	store := NewMemoryStore(map[string]MetricConfig{
+	store := NewMemoryStore(map[string]types.MetricConfig{
 		"a": {Frequency: 1},
 	})
 
@@ -159,8 +161,8 @@ func TestMemoryStoreMissingDatapoints(t *testing.T) {
 			continue
 		}
 
-		err := store.Write([]string{"testhost"}, int64(i), []Metric{
-			{Name: "a", Value: Float(i)},
+		err := store.Write([]string{"testhost"}, int64(i), []types.Metric{
+			{Name: "a", Value: types.Float(i)},
 		})
 		if err != nil {
 			t.Error(err)
@@ -168,7 +170,7 @@ func TestMemoryStoreMissingDatapoints(t *testing.T) {
 		}
 	}
 
-	sel := Selector{{String: "testhost"}}
+	sel := types.Selector{{String: "testhost"}}
 	adata, _, _, err := store.Read(sel, "a", 0, int64(count))
 	if err != nil {
 		t.Error(err)
@@ -182,7 +184,7 @@ func TestMemoryStoreMissingDatapoints(t *testing.T) {
 
 	for i := 0; i < count-2; i++ {
 		if i%3 == 0 {
-			if adata[i] != Float(i) {
+			if adata[i] != types.Float(i) {
 				t.Error("unexpected value")
 				return
 			}
@@ -197,21 +199,21 @@ func TestMemoryStoreMissingDatapoints(t *testing.T) {
 
 func TestMemoryStoreAggregation(t *testing.T) {
 	count := 3000
-	store := NewMemoryStore(map[string]MetricConfig{
-		"a": {Frequency: 1, Aggregation: SumAggregation},
+	store := NewMemoryStore(map[string]types.MetricConfig{
+		"a": {Frequency: 1, Aggregation: types.SumAggregation},
 	})
 
 	for i := 0; i < count; i++ {
-		err := store.Write([]string{"host0", "cpu0"}, int64(i), []Metric{
-			{Name: "a", Value: Float(i) / 2.},
+		err := store.Write([]string{"host0", "cpu0"}, int64(i), []types.Metric{
+			{Name: "a", Value: types.Float(i) / 2.},
 		})
 		if err != nil {
 			t.Error(err)
 			return
 		}
 
-		err = store.Write([]string{"host0", "cpu1"}, int64(i), []Metric{
-			{Name: "a", Value: Float(i) * 2.},
+		err = store.Write([]string{"host0", "cpu1"}, int64(i), []types.Metric{
+			{Name: "a", Value: types.Float(i) * 2.},
 		})
 		if err != nil {
 			t.Error(err)
@@ -219,7 +221,7 @@ func TestMemoryStoreAggregation(t *testing.T) {
 		}
 	}
 
-	adata, from, to, err := store.Read(Selector{{String: "host0"}}, "a", int64(0), int64(count))
+	adata, from, to, err := store.Read(types.Selector{{String: "host0"}}, "a", int64(0), int64(count))
 	if err != nil {
 		t.Error(err)
 		return
@@ -231,7 +233,7 @@ func TestMemoryStoreAggregation(t *testing.T) {
 	}
 
 	for i := 0; i < count; i++ {
-		expected := Float(i)/2. + Float(i)*2.
+		expected := types.Float(i)/2. + types.Float(i)*2.
 		if adata[i] != expected {
 			t.Errorf("expected: %f, got: %f", expected, adata[i])
 			return
@@ -241,9 +243,9 @@ func TestMemoryStoreAggregation(t *testing.T) {
 
 func TestMemoryStoreStats(t *testing.T) {
 	count := 3000
-	store := NewMemoryStore(map[string]MetricConfig{
+	store := NewMemoryStore(map[string]types.MetricConfig{
 		"a": {Frequency: 1},
-		"b": {Frequency: 1, Aggregation: AvgAggregation},
+		"b": {Frequency: 1, Aggregation: types.AvgAggregation},
 	})
 
 	sel1 := []string{"cluster", "host1"}
@@ -270,18 +272,18 @@ func TestMemoryStoreStats(t *testing.T) {
 		bmin = math.Min(bmin, b)
 		bmax = math.Max(bmax, b)
 
-		store.Write(sel1, int64(i), []Metric{
-			{Name: "a", Value: Float(a)},
+		store.Write(sel1, int64(i), []types.Metric{
+			{Name: "a", Value: types.Float(a)},
 		})
-		store.Write(sel2, int64(i), []Metric{
-			{Name: "b", Value: Float(b)},
+		store.Write(sel2, int64(i), []types.Metric{
+			{Name: "b", Value: types.Float(b)},
 		})
-		store.Write(sel3, int64(i), []Metric{
-			{Name: "b", Value: Float(b)},
+		store.Write(sel3, int64(i), []types.Metric{
+			{Name: "b", Value: types.Float(b)},
 		})
 	}
 
-	stats, from, to, err := store.Stats(Selector{{String: "cluster"}, {String: "host1"}}, "a", 0, int64(count))
+	stats, from, to, err := store.Stats(types.Selector{{String: "cluster"}, {String: "host1"}}, "a", 0, int64(count))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,11 +292,11 @@ func TestMemoryStoreStats(t *testing.T) {
 		t.Fatalf("unexpected: from=%d, to=%d, stats.Samples=%d (expected samples=%d)\n", from, to, stats.Samples, samples)
 	}
 
-	if stats.Avg != Float(asum/float64(samples)) || stats.Min != Float(amin) || stats.Max != Float(amax) {
+	if stats.Avg != types.Float(asum/float64(samples)) || stats.Min != types.Float(amin) || stats.Max != types.Float(amax) {
 		t.Fatalf("wrong stats: %#v\n", stats)
 	}
 
-	stats, from, to, err = store.Stats(Selector{{String: "cluster"}, {String: "host2"}}, "b", 0, int64(count))
+	stats, from, to, err = store.Stats(types.Selector{{String: "cluster"}, {String: "host2"}}, "b", 0, int64(count))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,22 +305,22 @@ func TestMemoryStoreStats(t *testing.T) {
 		t.Fatalf("unexpected: from=%d, to=%d, stats.Samples=%d (expected samples=%d)\n", from, to, stats.Samples, samples*2)
 	}
 
-	if stats.Avg != Float(bsum/float64(samples*2)) || stats.Min != Float(bmin) || stats.Max != Float(bmax) {
+	if stats.Avg != types.Float(bsum/float64(samples*2)) || stats.Min != types.Float(bmin) || stats.Max != types.Float(bmax) {
 		t.Fatalf("wrong stats: %#v (expected: avg=%f, min=%f, max=%f)\n", stats, bsum/float64(samples*2), bmin, bmax)
 	}
 }
 
 func TestMemoryStoreArchive(t *testing.T) {
-	store1 := NewMemoryStore(map[string]MetricConfig{
+	store1 := NewMemoryStore(map[string]types.MetricConfig{
 		"a": {Frequency: 1},
 		"b": {Frequency: 1},
 	})
 
 	count := 2000
 	for i := 0; i < count; i++ {
-		err := store1.Write([]string{"cluster", "host", "cpu0"}, 100+int64(i), []Metric{
-			{Name: "a", Value: Float(i)},
-			{Name: "b", Value: Float(i * 2)},
+		err := store1.Write([]string{"cluster", "host", "cpu0"}, 100+int64(i), []types.Metric{
+			{Name: "a", Value: types.Float(i)},
+			{Name: "b", Value: types.Float(i * 2)},
 		})
 		if err != nil {
 			t.Error(err)
@@ -329,29 +331,29 @@ func TestMemoryStoreArchive(t *testing.T) {
 	// store1.DebugDump(bufio.NewWriter(os.Stdout))
 
 	archiveRoot := t.TempDir()
-	_, err := store1.ToCheckpoint(archiveRoot, 100, 100+int64(count/2))
+	_, err := store1.ToJSONCheckpoint(archiveRoot, 100, 100+int64(count/2))
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	_, err = store1.ToCheckpoint(archiveRoot, 100+int64(count/2), 100+int64(count))
+	_, err = store1.ToJSONCheckpoint(archiveRoot, 100+int64(count/2), 100+int64(count))
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	store2 := NewMemoryStore(map[string]MetricConfig{
+	store2 := NewMemoryStore(map[string]types.MetricConfig{
 		"a": {Frequency: 1},
 		"b": {Frequency: 1},
 	})
-	n, err := store2.FromCheckpoint(archiveRoot, 100)
+	n, err := store2.FromJSONCheckpoint(archiveRoot, 100)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	sel := Selector{{String: "cluster"}, {String: "host"}, {String: "cpu0"}}
+	sel := types.Selector{{String: "cluster"}, {String: "host"}, {String: "cpu0"}}
 	adata, from, to, err := store2.Read(sel, "a", 100, int64(100+count))
 	if err != nil {
 		t.Error(err)
@@ -364,7 +366,7 @@ func TestMemoryStoreArchive(t *testing.T) {
 	}
 
 	for i := 0; i < count; i++ {
-		expected := Float(i)
+		expected := types.Float(i)
 		if adata[i] != expected {
 			t.Errorf("expected: %f, got: %f", expected, adata[i])
 		}
@@ -372,7 +374,7 @@ func TestMemoryStoreArchive(t *testing.T) {
 }
 
 func TestMemoryStoreFree(t *testing.T) {
-	store := NewMemoryStore(map[string]MetricConfig{
+	store := NewMemoryStore(map[string]types.MetricConfig{
 		"a": {Frequency: 1},
 		"b": {Frequency: 2},
 	})
@@ -380,44 +382,41 @@ func TestMemoryStoreFree(t *testing.T) {
 	count := 3000
 	sel := []string{"cluster", "host", "1"}
 	for i := 0; i < count; i++ {
-		err := store.Write(sel, int64(i), []Metric{
-			{Name: "a", Value: Float(i)},
-			{Name: "b", Value: Float(i)},
+		err := store.Write(sel, int64(i), []types.Metric{
+			{Name: "a", Value: types.Float(i)},
+			{Name: "b", Value: types.Float(i)},
 		})
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	n, err := store.Free([]string{"cluster", "host"}, int64(BUFFER_CAP*2)+100)
-	if err != nil {
-		t.Fatal(err)
-	}
+	n := store.Free(int64(bufferSizeInFloats*2) + 100)
 
 	if n != 3 {
 		t.Fatal("two buffers expected to be released")
 	}
 
-	adata, from, to, err := store.Read(Selector{{String: "cluster"}, {String: "host"}, {String: "1"}}, "a", 0, int64(count))
+	adata, from, to, err := store.Read(types.Selector{{String: "cluster"}, {String: "host"}, {String: "1"}}, "a", 0, int64(count))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if from != int64(BUFFER_CAP*2) || to != int64(count) || len(adata) != count-2*BUFFER_CAP {
+	if from != int64(bufferSizeInFloats*2) || to != int64(count) || len(adata) != count-2*bufferSizeInFloats {
 		t.Fatalf("unexpected values from call to `Read`: from=%d, to=%d, len=%d", from, to, len(adata))
 	}
 
-	// bdata, from, to, err := store.Read(Selector{{String: "cluster"}, {String: "host"}, {String: "1"}}, "b", 0, int64(count))
+	// bdata, from, to, err := store.Read(types.Selector{{String: "cluster"}, {String: "host"}, {String: "1"}}, "b", 0, int64(count))
 	// if err != nil {
 	// 	t.Fatal(err)
 	// }
 
-	// if from != int64(BUFFER_CAP*2) || to != int64(count) || len(bdata) != (count-2*BUFFER_CAP)/2 {
+	// if from != int64(bufferSizeInFloats*2) || to != int64(count) || len(bdata) != (count-2*bufferSizeInFloats)/2 {
 	// 	t.Fatalf("unexpected values from call to `Read`: from=%d (expected: %d), to=%d (expected: %d), len=%d (expected: %d)",
-	// 		from, BUFFER_CAP*2, to, count, len(bdata), (count-2*BUFFER_CAP)/2)
+	// 		from, bufferSizeInFloats*2, to, count, len(bdata), (count-2*bufferSizeInFloats)/2)
 	// }
 
-	if adata[0] != Float(BUFFER_CAP*2) || adata[len(adata)-1] != Float(count-1) {
+	if adata[0] != types.Float(bufferSizeInFloats*2) || adata[len(adata)-1] != types.Float(count-1) {
 		t.Fatal("wrong values")
 	}
 }
@@ -426,7 +425,7 @@ func BenchmarkMemoryStoreConcurrentWrites(b *testing.B) {
 	frequency := int64(5)
 	count := b.N
 	goroutines := 4
-	store := NewMemoryStore(map[string]MetricConfig{
+	store := NewMemoryStore(map[string]types.MetricConfig{
 		"a": {Frequency: frequency},
 	})
 
@@ -437,8 +436,8 @@ func BenchmarkMemoryStoreConcurrentWrites(b *testing.B) {
 		go func(g int) {
 			host := fmt.Sprintf("host%d", g)
 			for i := 0; i < count; i++ {
-				store.Write([]string{"cluster", host, "cpu0"}, int64(i)*frequency, []Metric{
-					{Name: "a", Value: Float(i)},
+				store.Write([]string{"cluster", host, "cpu0"}, int64(i)*frequency, []types.Metric{
+					{Name: "a", Value: types.Float(i)},
 				})
 			}
 			wg.Done()
@@ -450,7 +449,7 @@ func BenchmarkMemoryStoreConcurrentWrites(b *testing.B) {
 
 	for g := 0; g < goroutines; g++ {
 		host := fmt.Sprintf("host%d", g)
-		sel := Selector{{String: "cluster"}, {String: host}, {String: "cpu0"}}
+		sel := types.Selector{{String: "cluster"}, {String: host}, {String: "cpu0"}}
 		adata, _, _, err := store.Read(sel, "a", 0, int64(count)*frequency)
 		if err != nil {
 			b.Error(err)
@@ -463,7 +462,7 @@ func BenchmarkMemoryStoreConcurrentWrites(b *testing.B) {
 		}
 
 		for i := 0; i < count; i++ {
-			expected := Float(i)
+			expected := types.Float(i)
 			if adata[i] != expected {
 				b.Error("incorrect value for metric a")
 				return
@@ -475,23 +474,23 @@ func BenchmarkMemoryStoreConcurrentWrites(b *testing.B) {
 func BenchmarkMemoryStoreAggregation(b *testing.B) {
 	b.StopTimer()
 	count := 2000
-	store := NewMemoryStore(map[string]MetricConfig{
-		"flops_any": {Frequency: 1, Aggregation: AvgAggregation},
+	store := NewMemoryStore(map[string]types.MetricConfig{
+		"flops_any": {Frequency: 1, Aggregation: types.AvgAggregation},
 	})
 
 	sel := []string{"testcluster", "host123", "cpu0"}
 	for i := 0; i < count; i++ {
 		sel[2] = "cpu0"
-		err := store.Write(sel, int64(i), []Metric{
-			{Name: "flops_any", Value: Float(i)},
+		err := store.Write(sel, int64(i), []types.Metric{
+			{Name: "flops_any", Value: types.Float(i)},
 		})
 		if err != nil {
 			b.Fatal(err)
 		}
 
 		sel[2] = "cpu1"
-		err = store.Write(sel, int64(i), []Metric{
-			{Name: "flops_any", Value: Float(i)},
+		err = store.Write(sel, int64(i), []types.Metric{
+			{Name: "flops_any", Value: types.Float(i)},
 		})
 		if err != nil {
 			b.Fatal(err)
@@ -500,7 +499,7 @@ func BenchmarkMemoryStoreAggregation(b *testing.B) {
 
 	b.StartTimer()
 	for n := 0; n < b.N; n++ {
-		data, from, to, err := store.Read(Selector{{String: "testcluster"}, {String: "host123"}}, "flops_any", 0, int64(count))
+		data, from, to, err := store.Read(types.Selector{{String: "testcluster"}, {String: "host123"}}, "flops_any", 0, int64(count))
 		if err != nil {
 			b.Fatal(err)
 		}

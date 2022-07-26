@@ -139,7 +139,7 @@ func BenchmarkLineprotocolDecoder(b *testing.B) {
 		dec := lineprotocol.NewDecoderWithBytes(data)
 
 		b.StartTimer()
-		if err := decodeLine(memoryStore, dec, "ctest"); err != nil {
+		if err := DecodeLine(memoryStore, dec, "ctest"); err != nil {
 			b.Fatal(err)
 		}
 		b.StopTimer()

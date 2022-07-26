@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math"
 	"sync"
+	"unsafe"
 
 	"github.com/ClusterCockpit/cc-metric-store/internal/types"
 )
@@ -137,6 +138,26 @@ func (l *Level) countValues(from int64, to int64) int {
 	}
 
 	return vals
+}
+
+func (l *Level) sizeInBytes() int64 {
+	l.lock.RLock()
+	defer l.lock.RUnlock()
+	size := int64(0)
+
+	for _, b := range l.metrics {
+		for b != nil {
+			size += int64(len(b.data))
+			b = b.prev
+		}
+	}
+	size *= int64(unsafe.Sizeof(types.Float(0)))
+
+	for _, child := range l.sublevels {
+		size += child.sizeInBytes()
+	}
+
+	return size
 }
 
 type MemoryStore struct {
@@ -387,4 +408,91 @@ func (m *MemoryStore) Read(selector types.Selector, metric string, from, to int6
 	}
 
 	return data, from, to, nil
+}
+
+// Returns statistics for the requested metric on the selected node/level.
+// Data is aggregated to the selected level the same way as in `MemoryStore.Read`.
+// If `Stats.Samples` is zero, the statistics should not be considered as valid.
+func (m *MemoryStore) Stats(selector types.Selector, metric string, from, to int64) (*types.Stats, int64, int64, error) {
+	if from > to {
+		return nil, 0, 0, errors.New("invalid time range")
+	}
+
+	mc, ok := m.metrics[metric]
+	if !ok {
+		return nil, 0, 0, errors.New("unkown metric: " + metric)
+	}
+
+	n, samples := 0, 0
+	avg, min, max := types.Float(0), math.MaxFloat32, -math.MaxFloat32
+	err := m.root.findBuffers(selector, mc.Offset, func(c *chunk) error {
+		stats, cfrom, cto, err := c.stats(from, to)
+		if err != nil {
+			return err
+		}
+
+		if n == 0 {
+			from, to = cfrom, cto
+		} else if from != cfrom || to != cto {
+			return ErrDataDoesNotAlign
+		}
+
+		samples += stats.Samples
+		avg += stats.Avg
+		min = math.Min(min, float64(stats.Min))
+		max = math.Max(max, float64(stats.Max))
+		n += 1
+		return nil
+	})
+
+	if err != nil {
+		return nil, 0, 0, err
+	}
+
+	if n == 0 {
+		return nil, 0, 0, ErrNoData
+	}
+
+	if mc.Aggregation == types.AvgAggregation {
+		avg /= types.Float(n)
+	} else if n > 1 && mc.Aggregation != types.SumAggregation {
+		return nil, 0, 0, errors.New("invalid aggregation")
+	}
+
+	return &types.Stats{
+		Samples: samples,
+		Avg:     avg,
+		Min:     types.Float(min),
+		Max:     types.Float(max),
+	}, from, to, nil
+}
+
+// Given a selector, return a list of all children of the level selected.
+func (m *MemoryStore) ListChildren(selector []string) []string {
+	lvl := &m.root
+	for lvl != nil && len(selector) != 0 {
+		lvl.lock.RLock()
+		next := lvl.sublevels[selector[0]]
+		lvl.lock.RUnlock()
+		lvl = next
+		selector = selector[1:]
+	}
+
+	if lvl == nil {
+		return nil
+	}
+
+	lvl.lock.RLock()
+	defer lvl.lock.RUnlock()
+
+	children := make([]string, 0, len(lvl.sublevels))
+	for child := range lvl.sublevels {
+		children = append(children, child)
+	}
+
+	return children
+}
+
+func (m *MemoryStore) SizeInBytes() int64 {
+	return m.root.sizeInBytes()
 }

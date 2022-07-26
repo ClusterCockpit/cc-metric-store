@@ -187,7 +187,7 @@ func reorder(buf, prefix []byte) []byte {
 
 // Decode lines using dec and make write calls to the MemoryStore.
 // If a line is missing its cluster tag, use clusterDefault as default.
-func decodeLine(memoryStore *memstore.MemoryStore, dec *lineprotocol.Decoder, clusterDefault string) error {
+func DecodeLine(memoryStore *memstore.MemoryStore, dec *lineprotocol.Decoder, clusterDefault string) error {
 	// Reduce allocations in loop:
 	t := time.Now()
 	metric, metricBuf := types.Metric{}, make([]byte, 0, 16)

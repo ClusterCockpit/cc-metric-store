@@ -1,4 +1,4 @@
-package main
+package memstore
 
 import (
 	"bufio"
@@ -6,22 +6,22 @@ import (
 	"strconv"
 )
 
-func (b *buffer) debugDump(buf []byte) []byte {
-	if b.prev != nil {
-		buf = b.prev.debugDump(buf)
+func (c *chunk) debugDump(buf []byte) []byte {
+	if c.prev != nil {
+		buf = c.prev.debugDump(buf)
 	}
 
-	start, len, end := b.start, len(b.data), b.start+b.frequency*int64(len(b.data))
+	start, len, end := c.start, len(c.data), c.start+c.frequency*int64(len(c.data))
 	buf = append(buf, `{"start":`...)
 	buf = strconv.AppendInt(buf, start, 10)
 	buf = append(buf, `,"len":`...)
 	buf = strconv.AppendInt(buf, int64(len), 10)
 	buf = append(buf, `,"end":`...)
 	buf = strconv.AppendInt(buf, end, 10)
-	if b.archived {
+	if c.checkpointed {
 		buf = append(buf, `,"saved":true`...)
 	}
-	if b.next != nil {
+	if c.next != nil {
 		buf = append(buf, `},`...)
 	} else {
 		buf = append(buf, `}`...)
@@ -29,7 +29,7 @@ func (b *buffer) debugDump(buf []byte) []byte {
 	return buf
 }
 
-func (l *level) debugDump(m *MemoryStore, w *bufio.Writer, lvlname string, buf []byte, depth int) ([]byte, error) {
+func (l *Level) debugDump(m *MemoryStore, w *bufio.Writer, lvlname string, buf []byte, depth int) ([]byte, error) {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 	for i := 0; i < depth; i++ {
@@ -41,7 +41,7 @@ func (l *level) debugDump(m *MemoryStore, w *bufio.Writer, lvlname string, buf [
 	depth += 1
 	objitems := 0
 	for name, mc := range m.metrics {
-		if b := l.metrics[mc.offset]; b != nil {
+		if b := l.metrics[mc.Offset]; b != nil {
 			for i := 0; i < depth; i++ {
 				buf = append(buf, '\t')
 			}
@@ -55,7 +55,7 @@ func (l *level) debugDump(m *MemoryStore, w *bufio.Writer, lvlname string, buf [
 		}
 	}
 
-	for name, lvl := range l.children {
+	for name, lvl := range l.sublevels {
 		_, err := w.Write(buf)
 		if err != nil {
 			return nil, err

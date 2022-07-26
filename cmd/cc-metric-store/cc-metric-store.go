@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -16,7 +15,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ClusterCockpit/cc-metric-store/internal/api"
+	"github.com/ClusterCockpit/cc-metric-store/internal/api/apiv1"
+	"github.com/ClusterCockpit/cc-metric-store/internal/memstore"
+	"github.com/ClusterCockpit/cc-metric-store/internal/types"
 	"github.com/google/gops/agent"
+	"github.com/influxdata/line-protocol/v2/lineprotocol"
 )
 
 // For aggregation over multiple values at different cpus/sockets/..., not time!
@@ -47,17 +51,6 @@ func (as *AggregationStrategy) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type MetricConfig struct {
-	// Interval in seconds at which measurements will arive.
-	Frequency int64 `json:"frequency"`
-
-	// Can be 'sum', 'avg' or null. Describes how to aggregate metrics from the same timestep over the hierarchy.
-	Aggregation AggregationStrategy `json:"aggregation"`
-
-	// Private, used internally...
-	offset int
-}
-
 type HttpConfig struct {
 	// Address to bind to, for example "0.0.0.0:8081"
 	Address string `json:"address"`
@@ -69,29 +62,12 @@ type HttpConfig struct {
 	KeyFile string `json:"https-key-file"`
 }
 
-type NatsConfig struct {
-	// Address of the nats server
-	Address string `json:"address"`
-
-	// Username/Password, optional
-	Username string `json:"username"`
-	Password string `json:"password"`
-
-	Subscriptions []struct {
-		// Channel name
-		SubscribeTo string `json:"subscribe-to"`
-
-		// Allow lines without a cluster tag, use this as default, optional
-		ClusterTag string `json:"cluster-tag"`
-	} `json:"subscriptions"`
-}
-
 type Config struct {
-	Metrics           map[string]MetricConfig `json:"metrics"`
-	RetentionInMemory string                  `json:"retention-in-memory"`
-	Nats              []*NatsConfig           `json:"nats"`
-	JwtPublicKey      string                  `json:"jwt-public-key"`
-	HttpConfig        *HttpConfig             `json:"http-api"`
+	Metrics           map[string]types.MetricConfig `json:"metrics"`
+	RetentionInMemory string                        `json:"retention-in-memory"`
+	Nats              []*api.NatsConfig             `json:"nats"`
+	JwtPublicKey      string                        `json:"jwt-public-key"`
+	HttpConfig        *HttpConfig                   `json:"http-api"`
 	Checkpoints       struct {
 		Interval string `json:"interval"`
 		RootDir  string `json:"directory"`
@@ -103,17 +79,13 @@ type Config struct {
 		DeleteInstead bool   `json:"delete-instead"`
 	} `json:"archive"`
 	Debug struct {
-		EnableGops bool   `json:"gops"`
-		DumpToFile string `json:"dump-to-file"`
+		EnableGops bool `json:"gops"`
 	} `json:"debug"`
 }
 
 var conf Config
-var memoryStore *MemoryStore = nil
+var memoryStore *memstore.MemoryStore = nil
 var lastCheckpoint time.Time
-
-var debugDumpLock sync.Mutex
-var debugDump io.Writer = io.Discard
 
 func loadConfiguration(file string) Config {
 	var config Config
@@ -163,12 +135,8 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 			case <-ticks:
 				t := time.Now().Add(-d)
 				log.Printf("start freeing buffers (older than %s)...\n", t.Format(time.RFC3339))
-				freed, err := memoryStore.Free(nil, t.Unix())
-				if err != nil {
-					log.Printf("freeing up buffers failed: %s\n", err.Error())
-				} else {
-					log.Printf("done: %d buffers freed\n", freed)
-				}
+				freed := memoryStore.Free(t.Unix())
+				log.Printf("done: %d buffers freed\n", freed)
 			}
 		}
 	}()
@@ -192,7 +160,7 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 			case <-ticks:
 				log.Printf("start checkpointing (starting at %s)...\n", lastCheckpoint.Format(time.RFC3339))
 				now := time.Now()
-				n, err := memoryStore.ToCheckpoint(conf.Checkpoints.RootDir,
+				n, err := memoryStore.ToJSONCheckpoint(conf.Checkpoints.RootDir,
 					lastCheckpoint.Unix(), now.Unix())
 				if err != nil {
 					log.Printf("checkpointing failed: %s\n", err.Error())
@@ -222,7 +190,7 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 			case <-ticks:
 				t := time.Now().Add(-d)
 				log.Printf("start archiving checkpoints (older than %s)...\n", t.Format(time.RFC3339))
-				n, err := ArchiveCheckpoints(conf.Checkpoints.RootDir, conf.Archive.RootDir, t.Unix(), conf.Archive.DeleteInstead)
+				n, err := memstore.ArchiveCheckpoints(conf.Checkpoints.RootDir, conf.Archive.RootDir, t.Unix(), conf.Archive.DeleteInstead)
 				if err != nil {
 					log.Printf("archiving failed: %s\n", err.Error())
 				} else {
@@ -242,21 +210,12 @@ func main() {
 
 	startupTime := time.Now()
 	conf = loadConfiguration(configFile)
-	memoryStore = NewMemoryStore(conf.Metrics)
+	memoryStore = memstore.NewMemoryStore(conf.Metrics)
 
 	if enableGopsAgent || conf.Debug.EnableGops {
 		if err := agent.Listen(agent.Options{}); err != nil {
 			log.Fatal(err)
 		}
-	}
-
-	if conf.Debug.DumpToFile != "" {
-		f, err := os.Create(conf.Debug.DumpToFile)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		debugDump = f
 	}
 
 	d, err := time.ParseDuration(conf.Checkpoints.Restore)
@@ -266,7 +225,7 @@ func main() {
 
 	restoreFrom := startupTime.Add(-d)
 	log.Printf("Loading checkpoints newer than %s\n", restoreFrom.Format(time.RFC3339))
-	files, err := memoryStore.FromCheckpoint(conf.Checkpoints.RootDir, restoreFrom.Unix())
+	files, err := memoryStore.FromJSONCheckpoint(conf.Checkpoints.RootDir, restoreFrom.Unix())
 	loadedData := memoryStore.SizeInBytes() / 1024 / 1024 // In MB
 	if err != nil {
 		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
@@ -307,8 +266,16 @@ func main() {
 
 	wg.Add(1)
 
+	httpApi := apiv1.HttpApi{
+		MemoryStore: memoryStore,
+		PublicKey:   conf.JwtPublicKey,
+		Address:     conf.HttpConfig.Address,
+		CertFile:    conf.HttpConfig.CertFile,
+		KeyFile:     conf.HttpConfig.KeyFile,
+	}
+
 	go func() {
-		err := StartApiServer(ctx, conf.HttpConfig)
+		err := httpApi.StartServer(ctx)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -322,7 +289,9 @@ func main() {
 			nc := natsConf
 			go func() {
 				// err := ReceiveNats(conf.Nats, decodeLine, runtime.NumCPU()-1, ctx)
-				err := ReceiveNats(nc, decodeLine, 1, ctx)
+				err := api.ReceiveNats(nc, func(d *lineprotocol.Decoder, s string) error {
+					return api.DecodeLine(memoryStore, d, s)
+				}, 1, ctx)
 
 				if err != nil {
 					log.Fatal(err)
@@ -335,15 +304,9 @@ func main() {
 	wg.Wait()
 
 	log.Printf("Writing to '%s'...\n", conf.Checkpoints.RootDir)
-	files, err = memoryStore.ToCheckpoint(conf.Checkpoints.RootDir, lastCheckpoint.Unix(), time.Now().Unix())
+	files, err = memoryStore.ToJSONCheckpoint(conf.Checkpoints.RootDir, lastCheckpoint.Unix(), time.Now().Unix())
 	if err != nil {
 		log.Printf("Writing checkpoint failed: %s\n", err.Error())
 	}
 	log.Printf("Done! (%d files written)\n", files)
-
-	if closer, ok := debugDump.(io.Closer); ok {
-		if err := closer.Close(); err != nil {
-			log.Printf("error: %s", err.Error())
-		}
-	}
 }
