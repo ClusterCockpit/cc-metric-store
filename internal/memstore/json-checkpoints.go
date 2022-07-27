@@ -417,7 +417,8 @@ func (l *Level) fromJSONCheckpoint(dir string, from int64, m *MemoryStore) (int,
 func findFiles(direntries []fs.DirEntry, t int64, findMoreRecentFiles bool) ([]string, error) {
 	nums := map[string]int64{}
 	for _, e := range direntries {
-		ts, err := strconv.ParseInt(strings.TrimSuffix(e.Name(), ".json"), 10, 64)
+		ts, err := strconv.ParseInt(
+			strings.TrimSuffix(strings.TrimSuffix(e.Name(), ".json"), ".data"), 10, 64)
 		if err != nil {
 			return nil, err
 		}
@@ -469,7 +470,7 @@ func ArchiveCheckpoints(checkpointsDir, archiveDir string, from int64, deleteIns
 		cluster, host string
 	}
 
-	numWorkers := 2
+	numWorkers := 3
 	var wg sync.WaitGroup
 	n, errs := int32(0), int32(0)
 	work := make(chan workItem, numWorkers)

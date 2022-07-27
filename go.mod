@@ -4,9 +4,11 @@ go 1.18
 
 require (
 	github.com/golang-jwt/jwt/v4 v4.0.0
+	github.com/golang/snappy v0.0.4
 	github.com/google/gops v0.3.22
 	github.com/gorilla/mux v1.8.0
 	github.com/influxdata/line-protocol/v2 v2.2.0
+	github.com/klauspost/compress v1.11.12
 	github.com/nats-io/nats.go v1.11.0
 	golang.org/x/sys v0.0.0-20210902050250-f475640dd07b
 )

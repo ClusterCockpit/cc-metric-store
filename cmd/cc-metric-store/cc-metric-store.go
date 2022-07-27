@@ -6,11 +6,15 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -19,6 +23,7 @@ import (
 	"github.com/ClusterCockpit/cc-metric-store/internal/api/apiv1"
 	"github.com/ClusterCockpit/cc-metric-store/internal/memstore"
 	"github.com/ClusterCockpit/cc-metric-store/internal/types"
+	"github.com/golang/snappy"
 	"github.com/google/gops/agent"
 	"github.com/influxdata/line-protocol/v2/lineprotocol"
 )
@@ -69,9 +74,11 @@ type Config struct {
 	JwtPublicKey      string                        `json:"jwt-public-key"`
 	HttpConfig        *HttpConfig                   `json:"http-api"`
 	Checkpoints       struct {
-		Interval string `json:"interval"`
-		RootDir  string `json:"directory"`
-		Restore  string `json:"restore"`
+		Interval         string `json:"interval"`
+		RootDir          string `json:"directory"`
+		Restore          string `json:"restore"`
+		Binary           bool   `json:"binary-enabled"`
+		BinaryCompressed bool   `json:"binary-compressed"`
 	} `json:"checkpoints"`
 	Archive struct {
 		Interval      string `json:"interval"`
@@ -104,18 +111,6 @@ func loadConfiguration(file string) Config {
 
 func intervals(wg *sync.WaitGroup, ctx context.Context) {
 	wg.Add(3)
-	// go func() {
-	// 	defer wg.Done()
-	// 	ticks := time.Tick(30 * time.Minute)
-	// 	for {
-	// 		select {
-	// 		case <-ctx.Done():
-	// 			return
-	// 		case <-ticks:
-	// 			runtime.GC()
-	// 		}
-	// 	}
-	// }()
 
 	go func() {
 		defer wg.Done()
@@ -160,13 +155,21 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 			case <-ticks:
 				log.Printf("start checkpointing (starting at %s)...\n", lastCheckpoint.Format(time.RFC3339))
 				now := time.Now()
-				n, err := memoryStore.ToJSONCheckpoint(conf.Checkpoints.RootDir,
-					lastCheckpoint.Unix(), now.Unix())
-				if err != nil {
-					log.Printf("checkpointing failed: %s\n", err.Error())
+				if conf.Checkpoints.Binary {
+					if err := makeBinaryCheckpoint(lastCheckpoint.Unix(), now.Unix()); err != nil {
+						log.Printf("checkpointing failed: %s\n", err.Error())
+					} else {
+						log.Printf("done!")
+					}
 				} else {
-					log.Printf("done: %d checkpoint files created\n", n)
-					lastCheckpoint = now
+					n, err := memoryStore.ToJSONCheckpoint(conf.Checkpoints.RootDir,
+						lastCheckpoint.Unix(), now.Unix())
+					if err != nil {
+						log.Printf("checkpointing failed: %s\n", err.Error())
+					} else {
+						log.Printf("done: %d checkpoint files created\n", n)
+						lastCheckpoint = now
+					}
 				}
 			}
 		}
@@ -225,12 +228,21 @@ func main() {
 
 	restoreFrom := startupTime.Add(-d)
 	log.Printf("Loading checkpoints newer than %s\n", restoreFrom.Format(time.RFC3339))
-	files, err := memoryStore.FromJSONCheckpoint(conf.Checkpoints.RootDir, restoreFrom.Unix())
-	loadedData := memoryStore.SizeInBytes() / 1024 / 1024 // In MB
-	if err != nil {
-		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
+	if conf.Checkpoints.Binary {
+		if err := loadBinaryCheckpoints(restoreFrom.Unix()); err != nil {
+			log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
+		} else {
+			loadedData := memoryStore.SizeInBytes() / 1024 / 1024 // In MB
+			log.Printf("Checkpoints loaded (%d MB, that took %fs)\n", loadedData, time.Since(startupTime).Seconds())
+		}
 	} else {
-		log.Printf("Checkpoints loaded (%d files, %d MB, that took %fs)\n", files, loadedData, time.Since(startupTime).Seconds())
+		files, err := memoryStore.FromJSONCheckpoint(conf.Checkpoints.RootDir, restoreFrom.Unix())
+		if err != nil {
+			log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
+		} else {
+			loadedData := memoryStore.SizeInBytes() / 1024 / 1024 // In MB
+			log.Printf("Checkpoints loaded (%d files, %d MB, that took %fs)\n", files, loadedData, time.Since(startupTime).Seconds())
+		}
 	}
 
 	// Try to use less memory by forcing a GC run here and then
@@ -240,7 +252,7 @@ func main() {
 	// Forcing a GC here will set the "previously active heap"
 	// to a minumum.
 	runtime.GC()
-	if loadedData > 1000 && os.Getenv("GOGC") == "" {
+	if os.Getenv("GOGC") == "" {
 		debug.SetGCPercent(10)
 	}
 
@@ -303,10 +315,85 @@ func main() {
 
 	wg.Wait()
 
-	log.Printf("Writing to '%s'...\n", conf.Checkpoints.RootDir)
-	files, err = memoryStore.ToJSONCheckpoint(conf.Checkpoints.RootDir, lastCheckpoint.Unix(), time.Now().Unix())
-	if err != nil {
-		log.Printf("Writing checkpoint failed: %s\n", err.Error())
+	log.Printf("Writing checkpoint...\n")
+	if conf.Checkpoints.Binary {
+		if err := makeBinaryCheckpoint(lastCheckpoint.Unix(), time.Now().Unix()+60); err != nil {
+			log.Printf("Writing checkpoint failed: %s\n", err.Error())
+		}
+		log.Printf("Done!")
+	} else {
+		files, err := memoryStore.ToJSONCheckpoint(conf.Checkpoints.RootDir, lastCheckpoint.Unix(), time.Now().Unix())
+		if err != nil {
+			log.Printf("Writing checkpoint failed: %s\n", err.Error())
+		}
+		log.Printf("Done! (%d files written)\n", files)
 	}
-	log.Printf("Done! (%d files written)\n", files)
+}
+
+func loadBinaryCheckpoints(from int64) error {
+	dir, err := os.ReadDir(conf.Checkpoints.RootDir)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range dir {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".data") {
+			continue
+		}
+
+		t, err := strconv.ParseInt(strings.TrimSuffix(entry.Name(), ".data"), 10, 64)
+		if err != nil {
+			return err
+		}
+
+		if t < from {
+			continue
+		}
+
+		log.Printf("loading checkpoint file %s/%s...", conf.Checkpoints.RootDir, entry.Name())
+		f, err := os.Open(filepath.Join(conf.Checkpoints.RootDir, entry.Name()))
+		if err != nil {
+			return err
+		}
+
+		var reader io.Reader = bufio.NewReader(f)
+		if conf.Checkpoints.BinaryCompressed {
+			reader = snappy.NewReader(reader)
+		}
+
+		if err := memoryStore.LoadCheckpoint(reader); err != nil {
+			return err
+		}
+
+		if err := f.Close(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func makeBinaryCheckpoint(from, to int64) error {
+	filename := filepath.Join(conf.Checkpoints.RootDir, fmt.Sprintf("%d.data", from))
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	if conf.Checkpoints.BinaryCompressed {
+		compressor := snappy.NewBufferedWriter(f)
+		if err := memoryStore.SaveCheckpoint(from, to, compressor); err != nil {
+			return err
+		}
+		if err := compressor.Flush(); err != nil {
+			return err
+		}
+	} else {
+		if err := memoryStore.SaveCheckpoint(from, to, f); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
