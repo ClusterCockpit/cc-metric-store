@@ -63,6 +63,7 @@ RPM: scripts/cc-metric-store.spec
 	@VERS=$$(git describe --tags $${COMMITISH})
 	@VERS=$${VERS#v}
 	@VERS=$$(echo $$VERS | sed -e s+'-'+'_'+g)
+	@if [ "$${VERS}" = "" ]; then VERS="0.0.1"; fi
 	@eval $$(rpmspec --query --queryformat "NAME='%{name}' VERSION='%{version}' RELEASE='%{release}' NVR='%{NVR}' NVRA='%{NVRA}'" --define="VERS $${VERS}" "$${SPECFILE}")
 	@PREFIX="$${NAME}-$${VERSION}"
 	@FORMAT="tar.gz"
@@ -94,8 +95,10 @@ DEB: scripts/cc-metric-store.deb.control $(APP)
 	@VERS=$$(git describe --tags --abbrev=0 $${COMMITISH})
 	@VERS=$${VERS#v}
 	@VERS=$$(echo $$VERS | sed -e s+'-'+'_'+g)
+	@if [ "$${VERS}" = "" ]; then VERS="0.0.1"; fi
 	@ARCH=$$(uname -m)
 	@ARCH=$$(echo $$ARCH | sed -e s+'_'+'-'+g)
+	@if [ "$${ARCH}" = "x86-64" ]; then ARCH=amd64; fi
 	@PREFIX="$${NAME}-$${VERSION}_$${ARCH}"
 	@SIZE_BYTES=$$(du -bcs --exclude=.dpkgbuild "$$WORKSPACE"/ | awk '{print $$1}' | head -1 | sed -e 's/^0\+//')
 	@SIZE="$$(awk -v size="$$SIZE_BYTES" 'BEGIN {print (size/1024)+1}' | awk '{print int($$0)}')"
