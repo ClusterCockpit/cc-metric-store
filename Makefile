@@ -104,7 +104,7 @@ DEB: scripts/cc-metric-store.deb.control $(APP)
 	@SIZE="$$(awk -v size="$$SIZE_BYTES" 'BEGIN {print (size/1024)+1}' | awk '{print int($$0)}')"
 	#@sed -e s+"{VERSION}"+"$$VERS"+g -e s+"{INSTALLED_SIZE}"+"$$SIZE"+g -e s+"{ARCH}"+"$$ARCH"+g $$CONTROLFILE > $${DEBIANDIR}/control
 	@sed -e s+"{VERSION}"+"$$VERS"+g -e s+"{INSTALLED_SIZE}"+"$$SIZE"+g -e s+"{ARCH}"+"$$ARCH"+g $$CONTROLFILE > $${DEBIANBINDIR}/control
-	@make PREFIX=$${WORKSPACE} install
+	@make PREFIX=$${WORKSPACE} BINDIR="sbin" install
 	@DEB_FILE="cc-metric-store_$${VERS}_$${ARCH}.deb"
 	@dpkg-deb -b $${WORKSPACE} "$$DEB_FILE"
 	@rm -r "$${WORKSPACE}"
