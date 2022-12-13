@@ -26,7 +26,7 @@ make
 
 %install
 # Install cc-metric-store
-make PREFIX=%{buildroot} BINDIR=%{_sbindir} install
+make PREFIX=%{buildroot} BINDIR=sbin install
 # Integrate into system
 install -Dpm 0644 scripts/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
 install -Dpm 0600 scripts/%{name}.config %{buildroot}%{_sysconfdir}/default/%{name}
