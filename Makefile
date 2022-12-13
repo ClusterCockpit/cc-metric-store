@@ -27,7 +27,7 @@ install: $(APP)
 	@if [ -z "$${WORKSPACE}" ]; then exit 1; fi
 	@mkdir --parents --verbose $${WORKSPACE}/usr/$(BINDIR)
 	@install -Dpm 755 $(APP) $${WORKSPACE}/usr/$(BINDIR)/$(APP)
-	@install -Dpm 600 config.json $${WORKSPACE}/$(APP)/$(APP).conf
+	@install -Dpm 600 config.json $${WORKSPACE}/etc/$(APP)/$(APP).json
 
 .PHONY: clean
 .ONESHELL:
@@ -104,7 +104,7 @@ DEB: scripts/cc-metric-store.deb.control $(APP)
 	@SIZE="$$(awk -v size="$$SIZE_BYTES" 'BEGIN {print (size/1024)+1}' | awk '{print int($$0)}')"
 	#@sed -e s+"{VERSION}"+"$$VERS"+g -e s+"{INSTALLED_SIZE}"+"$$SIZE"+g -e s+"{ARCH}"+"$$ARCH"+g $$CONTROLFILE > $${DEBIANDIR}/control
 	@sed -e s+"{VERSION}"+"$$VERS"+g -e s+"{INSTALLED_SIZE}"+"$$SIZE"+g -e s+"{ARCH}"+"$$ARCH"+g $$CONTROLFILE > $${DEBIANBINDIR}/control
-	@make PREFIX=$${WORKSPACE} BINDIR="sbin" install
+	@make PREFIX=$${WORKSPACE} install
 	@DEB_FILE="cc-metric-store_$${VERS}_$${ARCH}.deb"
 	@dpkg-deb -b $${WORKSPACE} "$$DEB_FILE"
 	@rm -r "$${WORKSPACE}"
