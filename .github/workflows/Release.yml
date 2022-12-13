@@ -266,6 +266,11 @@ jobs:
       with:
         name: cc-metric-store DEB for Ubuntu 20.04
 
+    - name: Download Ubuntu 22.04 DEB
+      uses: actions/download-artifact@v2
+      with:
+        name: cc-metric-store DEB for Ubuntu 22.04
+
     # The download actions do not publish the name of the downloaded file,
     # so we re-use the job outputs of the parent jobs. The files are all
     # downloaded to the current folder.
