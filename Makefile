@@ -27,7 +27,7 @@ install: $(APP)
 	@if [ -z "$${WORKSPACE}" ]; then exit 1; fi
 	@mkdir --parents --verbose $${WORKSPACE}/usr/$(BINDIR)
 	@install -Dpm 755 $(APP) $${WORKSPACE}/usr/$(BINDIR)/$(APP)
-	@install -Dpm 600 config.json $${WORKSPACE}/$(APP)/$(APP).conf
+	@install -Dpm 600 config.json $${WORKSPACE}/etc/$(APP)/$(APP).json
 
 .PHONY: clean
 .ONESHELL:
@@ -52,7 +52,7 @@ staticcheck:
 
 .ONESHELL:
 .PHONY: RPM
-RPM: scripts/cc-metric-collector.spec
+RPM: scripts/cc-metric-store.spec
 	@WORKSPACE="$${PWD}"
 	@SPECFILE="$${WORKSPACE}/scripts/cc-metric-store.spec"
 	# Setup RPM build tree
@@ -63,6 +63,7 @@ RPM: scripts/cc-metric-collector.spec
 	@VERS=$$(git describe --tags $${COMMITISH})
 	@VERS=$${VERS#v}
 	@VERS=$$(echo $$VERS | sed -e s+'-'+'_'+g)
+	@if [ "$${VERS}" = "" ]; then VERS="0.0.1"; fi
 	@eval $$(rpmspec --query --queryformat "NAME='%{name}' VERSION='%{version}' RELEASE='%{release}' NVR='%{NVR}' NVRA='%{NVRA}'" --define="VERS $${VERS}" "$${SPECFILE}")
 	@PREFIX="$${NAME}-$${VERSION}"
 	@FORMAT="tar.gz"
@@ -78,4 +79,35 @@ RPM: scripts/cc-metric-collector.spec
 	@     echo "SRPM: $${SRPMFILE}"
 	@     echo "::set-output name=SRPM::$${SRPMFILE}"
 	@     echo "::set-output name=RPM::$${RPMFILE}"
+	@fi
+
+.ONESHELL:
+.PHONY: DEB
+DEB: scripts/cc-metric-store.deb.control $(APP)
+	@BASEDIR=$${PWD}
+	@WORKSPACE=$${PWD}/.dpkgbuild
+	@DEBIANDIR=$${WORKSPACE}/debian
+	@DEBIANBINDIR=$${WORKSPACE}/DEBIAN
+	@mkdir --parents --verbose $$WORKSPACE $$DEBIANBINDIR
+	#@mkdir --parents --verbose $$DEBIANDIR
+	@CONTROLFILE="$${BASEDIR}/scripts/cc-metric-store.deb.control"
+	@COMMITISH="HEAD"
+	@VERS=$$(git describe --tags --abbrev=0 $${COMMITISH})
+	@VERS=$${VERS#v}
+	@VERS=$$(echo $$VERS | sed -e s+'-'+'_'+g)
+	@if [ "$${VERS}" = "" ]; then VERS="0.0.1"; fi
+	@ARCH=$$(uname -m)
+	@ARCH=$$(echo $$ARCH | sed -e s+'_'+'-'+g)
+	@if [ "$${ARCH}" = "x86-64" ]; then ARCH=amd64; fi
+	@PREFIX="$${NAME}-$${VERSION}_$${ARCH}"
+	@SIZE_BYTES=$$(du -bcs --exclude=.dpkgbuild "$$WORKSPACE"/ | awk '{print $$1}' | head -1 | sed -e 's/^0\+//')
+	@SIZE="$$(awk -v size="$$SIZE_BYTES" 'BEGIN {print (size/1024)+1}' | awk '{print int($$0)}')"
+	#@sed -e s+"{VERSION}"+"$$VERS"+g -e s+"{INSTALLED_SIZE}"+"$$SIZE"+g -e s+"{ARCH}"+"$$ARCH"+g $$CONTROLFILE > $${DEBIANDIR}/control
+	@sed -e s+"{VERSION}"+"$$VERS"+g -e s+"{INSTALLED_SIZE}"+"$$SIZE"+g -e s+"{ARCH}"+"$$ARCH"+g $$CONTROLFILE > $${DEBIANBINDIR}/control
+	@make PREFIX=$${WORKSPACE} install
+	@DEB_FILE="cc-metric-store_$${VERS}_$${ARCH}.deb"
+	@dpkg-deb -b $${WORKSPACE} "$$DEB_FILE"
+	@rm -r "$${WORKSPACE}"
+	@if [ "$${GITHUB_ACTIONS}" = "true" ]; then
+	@     echo "::set-output name=DEB::$${DEB_FILE}"
 	@fi

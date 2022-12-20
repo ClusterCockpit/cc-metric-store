@@ -26,7 +26,7 @@ make
 
 %install
 # Install cc-metric-store
-make PREFIX=%{buildroot} BINDIR=%%{_sbindir} install
+make PREFIX=%{buildroot} install
 # Integrate into system
 install -Dpm 0644 scripts/%{name}.service %{buildroot}%{_unitdir}/%{name}.service
 install -Dpm 0600 scripts/%{name}.config %{buildroot}%{_sysconfdir}/default/%{name}
@@ -47,7 +47,7 @@ install -Dpm 0644 scripts/%{name}.sysusers %{buildroot}%{_sysusersdir}/%{name}.c
 
 %files
 # Binary
-%attr(-,clustercockpit,clustercockpit) %{_sbindir}/%{name}
+%attr(-,clustercockpit,clustercockpit) %{_bindir}/%{name}
 # Config
 %dir %{_sysconfdir}/%{name}
 %attr(0600,clustercockpit,clustercockpit) %config(noreplace) %{_sysconfdir}/%{name}/%{name}.json
