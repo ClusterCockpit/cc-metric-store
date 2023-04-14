@@ -30,6 +30,7 @@ type ApiMetricData struct {
 	Avg   Float      `json:"avg"`
 	Min   Float      `json:"min"`
 	Max   Float      `json:"max"`
+	Unit  string     `json:"unit,omitempty"`
 }
 
 // TODO: Optimize this, just like the stats endpoint!
@@ -182,6 +183,7 @@ type ApiQueryRequest struct {
 	From        int64      `json:"from"`
 	To          int64      `json:"to"`
 	WithStats   bool       `json:"with-stats"`
+	WithUnit    bool       `json:"with-unit"`
 	WithData    bool       `json:"with-data"`
 	WithPadding bool       `json:"with-padding"`
 	Queries     []ApiQuery `json:"queries"`
@@ -281,7 +283,9 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 		res := make([]ApiMetricData, 0, len(sels))
 		for _, sel := range sels {
 			data := ApiMetricData{}
-			data.Data, data.From, data.To, err = memoryStore.Read(sel, query.Metric, req.From, req.To)
+			data.Unit = ""
+			unit := ""
+			data.Data, data.From, data.To, unit, err = memoryStore.Read(sel, query.Metric, req.From, req.To)
 			// log.Printf("data: %#v, %#v, %#v, %#v", data.Data, data.From, data.To, err)
 			if err != nil {
 				msg := err.Error()
@@ -298,6 +302,9 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 			}
 			if req.WithPadding {
 				data.PadDataWithNull(req.From, req.To, query.Metric)
+			}
+			if req.WithUnit {
+				data.Unit = unit
 			}
 			if !req.WithData {
 				data.Data = nil
