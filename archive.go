@@ -24,6 +24,7 @@ import (
 type CheckpointMetrics struct {
 	Frequency int64   `json:"frequency"`
 	Start     int64   `json:"start"`
+	Unit      string  `json:"unit"`
 	Data      []Float `json:"data"`
 }
 
@@ -36,6 +37,7 @@ func (cm *CheckpointMetrics) MarshalJSON() ([]byte, error) {
 	buf = strconv.AppendInt(buf, cm.Frequency, 10)
 	buf = append(buf, `,"start":`...)
 	buf = strconv.AppendInt(buf, cm.Start, 10)
+	buf = append(buf, fmt.Sprintf(`,"unit":"%s"`, cm.Unit)...)
 	buf = append(buf, `,"data":[`...)
 	for i, x := range cm.Data {
 		if i != 0 {
@@ -179,6 +181,7 @@ func (l *level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFil
 			Frequency: b.frequency,
 			Start:     start,
 			Data:      data,
+			Unit:      b.unit,
 		}
 	}
 
@@ -309,6 +312,7 @@ func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 			frequency: metric.Frequency,
 			start:     metric.Start,
 			data:      metric.Data[0:n:n], // Space is wasted here :(
+			unit:      "",
 			prev:      nil,
 			next:      nil,
 			archived:  true,
