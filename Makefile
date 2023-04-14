@@ -2,13 +2,13 @@
 APP = cc-metric-store
 GOSRC_APP        := cc-metric-store.go
 GOSRC_FILES      := api.go \
-		    memstore.go \
-		    archive.go \
-		    debug.go \
-		    float.go \
-		    lineprotocol.go \
-		    selector.go \
-		    stats.go
+					memstore.go \
+					archive.go \
+					debug.go \
+					float.go \
+					lineprotocol.go \
+					selector.go \
+					stats.go
 
 
 
@@ -18,7 +18,7 @@ BINDIR ?= bin
 .PHONY: all
 all: $(APP)
 
-$(APP): $(GOSRC)
+$(APP): $(GOSRC) $(GOSRC_APP)
 	go get
 	go build -o $(APP) $(GOSRC_APP) $(GOSRC_FILES)
 
