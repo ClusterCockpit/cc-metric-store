@@ -16,6 +16,7 @@ import (
 type Metric struct {
 	Name  string
 	Value Float
+	Unit  string
 
 	mc MetricConfig
 }
@@ -206,7 +207,7 @@ func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 		}
 
 		typeBuf, subTypeBuf := typeBuf[:0], subTypeBuf[:0]
-		cluster, host := clusterDefault, ""
+		cluster, host, unit := clusterDefault, "", ""
 		for {
 			key, val, err := dec.NextTag()
 			if err != nil {
@@ -232,6 +233,8 @@ func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 					host = string(val)
 					lvl = nil
 				}
+			case "unit":
+				unit = string(val)
 			case "type":
 				if string(val) == "node" {
 					break
@@ -300,6 +303,7 @@ func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 			} else {
 				return fmt.Errorf("unsupported value type in message: %s", val.Kind().String())
 			}
+			metric.Unit = unit
 		}
 
 		if t, err = dec.Time(lineprotocol.Second, t); err != nil {

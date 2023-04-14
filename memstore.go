@@ -35,6 +35,7 @@ var (
 type buffer struct {
 	frequency  int64   // Time between two "slots"
 	start      int64   // Timestamp of when `data[0]` was written.
+	unit       string  // Unit for the data in this buffer
 	data       []Float // The slice should never reallocacte as `cap(data)` is respected.
 	prev, next *buffer // `prev` contains older data, `next` newer data.
 	archived   bool    // If true, this buffer is already archived
@@ -50,12 +51,13 @@ type buffer struct {
 	*/
 }
 
-func newBuffer(ts, freq int64) *buffer {
+func newBuffer(ts, freq int64, unit string) *buffer {
 	b := bufferPool.Get().(*buffer)
 	b.frequency = freq
 	b.start = ts - (freq / 2)
 	b.prev = nil
 	b.next = nil
+	b.unit = unit
 	b.archived = false
 	b.closed = false
 	b.data = b.data[:0]
@@ -74,7 +76,7 @@ func (b *buffer) write(ts int64, value Float) (*buffer, error) {
 	// idx := int((ts - b.start + (b.frequency / 3)) / b.frequency)
 	idx := int((ts - b.start) / b.frequency)
 	if idx >= cap(b.data) {
-		newbuf := newBuffer(ts, b.frequency)
+		newbuf := newBuffer(ts, b.frequency, b.unit)
 		newbuf.prev = b
 		b.next = newbuf
 		b.close()
@@ -412,7 +414,7 @@ func (m *MemoryStore) WriteToLevel(l *level, selector []string, ts int64, metric
 		b := l.metrics[metric.mc.offset]
 		if b == nil {
 			// First write to this metric and level
-			b = newBuffer(ts, metric.mc.Frequency)
+			b = newBuffer(ts, metric.mc.Frequency, metric.Unit)
 			l.metrics[metric.mc.offset] = b
 		}
 
@@ -433,14 +435,15 @@ func (m *MemoryStore) WriteToLevel(l *level, selector []string, ts int64, metric
 // If the level does not hold the metric itself, the data will be aggregated recursively from the children.
 // The second and third return value are the actual from/to for the data. Those can be different from
 // the range asked for if no data was available.
-func (m *MemoryStore) Read(selector Selector, metric string, from, to int64) ([]Float, int64, int64, error) {
+func (m *MemoryStore) Read(selector Selector, metric string, from, to int64) ([]Float, int64, int64, string, error) {
+	var unit string = ""
 	if from > to {
-		return nil, 0, 0, errors.New("invalid time range")
+		return nil, 0, 0, "", errors.New("invalid time range")
 	}
 
 	minfo, ok := m.metrics[metric]
 	if !ok {
-		return nil, 0, 0, errors.New("unkown metric: " + metric)
+		return nil, 0, 0, "", errors.New("unkown metric: " + metric)
 	}
 
 	n, data := 0, make([]Float, (to-from)/minfo.Frequency+1)
@@ -449,6 +452,7 @@ func (m *MemoryStore) Read(selector Selector, metric string, from, to int64) ([]
 		if err != nil {
 			return err
 		}
+		unit = b.unit
 
 		if n == 0 {
 			from, to = cfrom, cto
@@ -476,9 +480,9 @@ func (m *MemoryStore) Read(selector Selector, metric string, from, to int64) ([]
 	})
 
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, 0, 0, "", err
 	} else if n == 0 {
-		return nil, 0, 0, errors.New("metric or host not found")
+		return nil, 0, 0, "", errors.New("metric or host not found")
 	} else if n > 1 {
 		if minfo.Aggregation == AvgAggregation {
 			normalize := 1. / Float(n)
@@ -486,11 +490,11 @@ func (m *MemoryStore) Read(selector Selector, metric string, from, to int64) ([]
 				data[i] *= normalize
 			}
 		} else if minfo.Aggregation != SumAggregation {
-			return nil, 0, 0, errors.New("invalid aggregation")
+			return nil, 0, 0, "", errors.New("invalid aggregation")
 		}
 	}
 
-	return data, from, to, nil
+	return data, from, to, unit, nil
 }
 
 // Release all buffers for the selected level and all its children that contain only

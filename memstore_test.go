@@ -28,12 +28,12 @@ func TestMemoryStoreBasics(t *testing.T) {
 	}
 
 	sel := Selector{{String: "testhost"}}
-	adata, from, to, err := store.Read(sel, "a", start, start+count*frequency)
-	if err != nil || from != start || to != start+count*frequency {
+	adata, from, to, unit, err := store.Read(sel, "a", start, start+count*frequency)
+	if err != nil || from != start || to != start+count*frequency || unit != "" {
 		t.Error(err)
 		return
 	}
-	bdata, _, _, err := store.Read(sel, "b", start, start+count*frequency)
+	bdata, _, _, unit, err := store.Read(sel, "b", start, start+count*frequency)
 	if err != nil {
 		t.Error(err)
 		return
@@ -83,23 +83,23 @@ func TestMemoryStoreTooMuchWrites(t *testing.T) {
 	}
 
 	end := start + int64(count)*frequency
-	data, from, to, err := store.Read(Selector{{String: "test"}}, "a", start, end)
-	if len(data) != count || from != start || to != end || err != nil {
+	data, from, to, unit, err := store.Read(Selector{{String: "test"}}, "a", start, end)
+	if len(data) != count || from != start || to != end || err != nil || unit != "" {
 		t.Fatalf("a: err=%#v, from=%d, to=%d, data=%#v\n", err, from, to, data)
 	}
 
-	data, from, to, err = store.Read(Selector{{String: "test"}}, "b", start, end)
-	if len(data) != count/2 || from != start || to != end || err != nil {
+	data, from, to, unit, err = store.Read(Selector{{String: "test"}}, "b", start, end)
+	if len(data) != count/2 || from != start || to != end || err != nil || unit != "" {
 		t.Fatalf("b: err=%#v, from=%d, to=%d, data=%#v\n", err, from, to, data)
 	}
 
-	data, from, to, err = store.Read(Selector{{String: "test"}}, "c", start, end)
-	if len(data) != count*2-1 || from != start || to != end-frequency/2 || err != nil {
+	data, from, to, unit, err = store.Read(Selector{{String: "test"}}, "c", start, end)
+	if len(data) != count*2-1 || from != start || to != end-frequency/2 || err != nil || unit != "" {
 		t.Fatalf("c: err=%#v, from=%d, to=%d, data=%#v\n", err, from, to, data)
 	}
 
-	data, from, to, err = store.Read(Selector{{String: "test"}}, "d", start, end)
-	if len(data) != count/3+1 || from != start || to != end+frequency*2 || err != nil {
+	data, from, to, unit, err = store.Read(Selector{{String: "test"}}, "d", start, end)
+	if len(data) != count/3+1 || from != start || to != end+frequency*2 || err != nil || unit != "" {
 		t.Errorf("expected: err=nil, from=%d, to=%d, len(data)=%d\n", start, end+frequency*2, count/3)
 		t.Fatalf("d: err=%#v, from=%d, to=%d, data=%#v\n", err, from, to, data)
 	}
@@ -121,7 +121,7 @@ func TestMemoryStoreOutOfBounds(t *testing.T) {
 	}
 
 	sel := Selector{{String: "cluster"}, {String: "host"}, {String: "cpu"}}
-	data, from, to, err := store.Read(sel, "a", 500, int64(toffset+count*60+500))
+	data, from, to, unit, err := store.Read(sel, "a", 500, int64(toffset+count*60+500))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,14 +136,14 @@ func TestMemoryStoreOutOfBounds(t *testing.T) {
 	}
 
 	testfrom, testlen := int64(100000000), int64(10000)
-	data, from, to, err = store.Read(sel, "a", testfrom, testfrom+testlen)
-	if len(data) != 0 || from != testfrom || to != testfrom || err != nil {
+	data, from, to, unit, err = store.Read(sel, "a", testfrom, testfrom+testlen)
+	if len(data) != 0 || from != testfrom || to != testfrom || err != nil || unit != "" {
 		t.Fatal("Unexpected data returned when reading range after valid data")
 	}
 
 	testfrom, testlen = 0, 10
-	data, from, to, err = store.Read(sel, "a", testfrom, testfrom+testlen)
-	if len(data) != 0 || from/60 != int64(toffset)/60 || to/60 != int64(toffset)/60 || err != nil {
+	data, from, to, unit, err = store.Read(sel, "a", testfrom, testfrom+testlen)
+	if len(data) != 0 || from/60 != int64(toffset)/60 || to/60 != int64(toffset)/60 || err != nil || unit != "" {
 		t.Fatal("Unexpected data returned when reading range before valid data")
 	}
 }
@@ -169,7 +169,7 @@ func TestMemoryStoreMissingDatapoints(t *testing.T) {
 	}
 
 	sel := Selector{{String: "testhost"}}
-	adata, _, _, err := store.Read(sel, "a", 0, int64(count))
+	adata, _, _, _, err := store.Read(sel, "a", 0, int64(count))
 	if err != nil {
 		t.Error(err)
 		return
@@ -219,7 +219,7 @@ func TestMemoryStoreAggregation(t *testing.T) {
 		}
 	}
 
-	adata, from, to, err := store.Read(Selector{{String: "host0"}}, "a", int64(0), int64(count))
+	adata, from, to, _, err := store.Read(Selector{{String: "host0"}}, "a", int64(0), int64(count))
 	if err != nil {
 		t.Error(err)
 		return
@@ -352,7 +352,7 @@ func TestMemoryStoreArchive(t *testing.T) {
 	}
 
 	sel := Selector{{String: "cluster"}, {String: "host"}, {String: "cpu0"}}
-	adata, from, to, err := store2.Read(sel, "a", 100, int64(100+count))
+	adata, from, to, _, err := store2.Read(sel, "a", 100, int64(100+count))
 	if err != nil {
 		t.Error(err)
 		return
@@ -398,7 +398,7 @@ func TestMemoryStoreFree(t *testing.T) {
 		t.Fatal("two buffers expected to be released")
 	}
 
-	adata, from, to, err := store.Read(Selector{{String: "cluster"}, {String: "host"}, {String: "1"}}, "a", 0, int64(count))
+	adata, from, to, _, err := store.Read(Selector{{String: "cluster"}, {String: "host"}, {String: "1"}}, "a", 0, int64(count))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +451,7 @@ func BenchmarkMemoryStoreConcurrentWrites(b *testing.B) {
 	for g := 0; g < goroutines; g++ {
 		host := fmt.Sprintf("host%d", g)
 		sel := Selector{{String: "cluster"}, {String: host}, {String: "cpu0"}}
-		adata, _, _, err := store.Read(sel, "a", 0, int64(count)*frequency)
+		adata, _, _, _, err := store.Read(sel, "a", 0, int64(count)*frequency)
 		if err != nil {
 			b.Error(err)
 			return
@@ -500,7 +500,7 @@ func BenchmarkMemoryStoreAggregation(b *testing.B) {
 
 	b.StartTimer()
 	for n := 0; n < b.N; n++ {
-		data, from, to, err := store.Read(Selector{{String: "testcluster"}, {String: "host123"}}, "flops_any", 0, int64(count))
+		data, from, to, _, err := store.Read(Selector{{String: "testcluster"}, {String: "host123"}}, "flops_any", 0, int64(count))
 		if err != nil {
 			b.Fatal(err)
 		}
