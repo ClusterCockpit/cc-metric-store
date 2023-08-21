@@ -21,6 +21,9 @@ func (b *buffer) debugDump(buf []byte) []byte {
 	if b.archived {
 		buf = append(buf, `,"saved":true`...)
 	}
+	if b.unit != "" {
+		buf = append(buf, fmt.Sprintf(`,"unit":"%s"`, b.unit)...)
+	}
 	if b.next != nil {
 		buf = append(buf, `},`...)
 	} else {

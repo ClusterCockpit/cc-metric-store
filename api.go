@@ -183,7 +183,7 @@ type ApiQueryRequest struct {
 	From        int64      `json:"from"`
 	To          int64      `json:"to"`
 	WithStats   bool       `json:"with-stats"`
-	WithUnit    bool       `json:"with-unit"`
+	WithUnit    bool       `json:"with-unit,omitempty"`
 	WithData    bool       `json:"with-data"`
 	WithPadding bool       `json:"with-padding"`
 	Queries     []ApiQuery `json:"queries"`
@@ -303,7 +303,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 			if req.WithPadding {
 				data.PadDataWithNull(req.From, req.To, query.Metric)
 			}
-			if req.WithUnit {
+			if req.WithUnit && len(unit) > 0 {
 				data.Unit = unit
 			}
 			if !req.WithData {

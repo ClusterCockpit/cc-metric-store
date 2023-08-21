@@ -24,7 +24,7 @@ import (
 type CheckpointMetrics struct {
 	Frequency int64   `json:"frequency"`
 	Start     int64   `json:"start"`
-	Unit      string  `json:"unit"`
+	Unit      string  `json:"unit,omitempty"`
 	Data      []Float `json:"data"`
 }
 
@@ -312,7 +312,7 @@ func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 			frequency: metric.Frequency,
 			start:     metric.Start,
 			data:      metric.Data[0:n:n], // Space is wasted here :(
-			unit:      "",
+			unit:      metric.Unit,
 			prev:      nil,
 			next:      nil,
 			archived:  true,
