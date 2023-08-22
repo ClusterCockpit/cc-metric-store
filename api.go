@@ -208,7 +208,7 @@ type ApiQuery struct {
 
 func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	var err error
-	var req ApiQueryRequest = ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true}
+	var req ApiQueryRequest = ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true, WithUnit: true}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
