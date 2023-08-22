@@ -1,27 +1,23 @@
 {
     "metrics": {
+        "cpi":  { "frequency": 15, "aggregation": "avg" },
         "flops_any":  { "frequency": 15, "aggregation": "sum" },
         "flops_dp":   { "frequency": 15, "aggregation": "sum" },
-        "flops_sp":   { "frequency": 15, "aggregation": "sum" },
-        "mem_bw":     { "frequency": 15, "aggregation": "sum" },
-        "load_one":   { "frequency": 15, "aggregation": null  },
-        "load_five":  { "frequency": 15, "aggregation": null  }
+        "flops_sp":   { "frequency": 15, "aggregation": "sum" }
     },
     "checkpoints": {
         "interval": "12h",
-        "directory": "./var/checkpoints",
+        "directory": "./testdata/checkpoints",
         "restore": "48h"
     },
     "archive": {
         "interval": "168h",
-        "directory": "./var/archive"
+        "directory": "./testdata/archive"
     },
     "http-api": {
-        "address": "0.0.0.0:8081",
+        "address": "127.0.0.1:8081",
         "https-cert-file": null,
         "https-key-file": null
     },
-    "retention-in-memory": "48h",
-    "nats": null,
-    "jwt-public-key": "kzfYrYy+TzpanWZHJ5qSdMj5uKUWgq74BWhQG6copP0="
+    "retention-in-memory": "48h"
 }

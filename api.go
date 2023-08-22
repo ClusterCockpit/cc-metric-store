@@ -283,9 +283,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 		res := make([]ApiMetricData, 0, len(sels))
 		for _, sel := range sels {
 			data := ApiMetricData{}
-			data.Unit = ""
-			unit := ""
-			data.Data, data.From, data.To, unit, err = memoryStore.Read(sel, query.Metric, req.From, req.To)
+			data.Data, data.From, data.To, data.Unit, err = memoryStore.Read(sel, query.Metric, req.From, req.To)
 			// log.Printf("data: %#v, %#v, %#v, %#v", data.Data, data.From, data.To, err)
 			if err != nil {
 				msg := err.Error()
@@ -302,9 +300,6 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 			}
 			if req.WithPadding {
 				data.PadDataWithNull(req.From, req.To, query.Metric)
-			}
-			if req.WithUnit && len(unit) > 0 {
-				data.Unit = unit
 			}
 			if !req.WithData {
 				data.Data = nil
