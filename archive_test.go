@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"log"
+	"os"
 	"testing"
 	"time"
 )
@@ -22,6 +24,8 @@ func TestFromCheckpoint(t *testing.T) {
 	} else {
 		log.Printf("Checkpoints loaded (%d files, %d MB, that took %fs)\n", files, loadedData, time.Since(startupTime).Seconds())
 	}
+
+	m.DebugDump(bufio.NewWriter(os.Stdout), nil)
 
 	if files != 2 {
 		t.Errorf("expected: %d, got: %d\n", 2, files)
