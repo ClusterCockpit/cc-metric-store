@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 	"github.com/influxdata/line-protocol/v2/lineprotocol"
 )
@@ -262,15 +262,18 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 				if query.SubType != nil {
 					for _, subTypeId := range query.SubTypeIds {
 						sels = append(sels, Selector{
-							{String: req.Cluster}, {String: query.Hostname},
+							{String: req.Cluster},
+							{String: query.Hostname},
 							{String: *query.Type + typeId},
-							{String: *query.SubType + subTypeId}})
+							{String: *query.SubType + subTypeId},
+						})
 					}
 				} else {
 					sels = append(sels, Selector{
 						{String: req.Cluster},
 						{String: query.Hostname},
-						{String: *query.Type + typeId}})
+						{String: *query.Type + typeId},
+					})
 				}
 			}
 		}
@@ -330,12 +333,12 @@ func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler
 		rawtoken := authheader[len("Bearer "):]
 		cacheLock.RLock()
 		token, ok := cache[rawtoken]
-		cacheLock.RUnlock()
-		if ok && token.Claims.Valid() == nil {
+		if ok && token.Valid {
+			cacheLock.RUnlock()
 			next.ServeHTTP(rw, r)
 			return
-		}
 
+		}
 		// The actual token is ignored for now.
 		// In case expiration and so on are specified, the Parse function
 		// already returns an error for expired tokens.
