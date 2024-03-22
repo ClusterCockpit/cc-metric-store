@@ -29,19 +29,20 @@ install: $(APP)
 	@install -Dpm 755 $(APP) $${WORKSPACE}/usr/$(BINDIR)/$(APP)
 	@install -Dpm 600 config.json $${WORKSPACE}/etc/$(APP)/$(APP).json
 
-.PHONY: clean
+.PHONY: clean test fmt
 .ONESHELL:
 clean:
 	rm -f $(APP)
 
-.PHONY: fmt
+test:
+	$(info ===>  TESTING)
+	@go clean -testcache
+	@go build ./...
+	@go vet ./...
+	@go test ./...
+
 fmt:
 	go fmt $(GOSRC_APP)
-
-# Examine Go source code and reports suspicious constructs
-.PHONY: vet
-vet:
-	go vet ./...
 
 # Run linter for the Go programming language.
 # Using static analysis, it finds bugs and performance issues, offers simplifications, and enforces style rules
