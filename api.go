@@ -24,9 +24,9 @@ import (
 
 type ApiMetricData struct {
 	Error *string    `json:"error,omitempty"`
+	Data  FloatArray `json:"data,omitempty"`
 	From  int64      `json:"from"`
 	To    int64      `json:"to"`
-	Data  FloatArray `json:"data,omitempty"`
 	Avg   Float      `json:"avg"`
 	Min   Float      `json:"min"`
 	Max   Float      `json:"max"`
@@ -134,7 +134,7 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	rw.WriteHeader(http.StatusOK)
-	rw.Write([]byte(fmt.Sprintf("buffers freed: %d\n", n)))
+	fmt.Fprintf(rw, "buffers freed: %d\n", n)
 }
 
 func handleWrite(rw http.ResponseWriter, r *http.Request) {
@@ -179,13 +179,13 @@ func handleWrite(rw http.ResponseWriter, r *http.Request) {
 
 type ApiQueryRequest struct {
 	Cluster     string     `json:"cluster"`
+	Queries     []ApiQuery `json:"queries"`
+	ForAllNodes []string   `json:"for-all-nodes"`
 	From        int64      `json:"from"`
 	To          int64      `json:"to"`
 	WithStats   bool       `json:"with-stats"`
 	WithData    bool       `json:"with-data"`
 	WithPadding bool       `json:"with-padding"`
-	Queries     []ApiQuery `json:"queries"`
-	ForAllNodes []string   `json:"for-all-nodes"`
 }
 
 type ApiQueryResponse struct {
@@ -194,20 +194,20 @@ type ApiQueryResponse struct {
 }
 
 type ApiQuery struct {
+	Type        *string  `json:"type,omitempty"`
+	SubType     *string  `json:"subtype,omitempty"`
 	Metric      string   `json:"metric"`
 	Hostname    string   `json:"host"`
-	Aggregate   bool     `json:"aggreg"`
-	ScaleFactor Float    `json:"scale-by,omitempty"`
-	Type        *string  `json:"type,omitempty"`
 	TypeIds     []string `json:"type-ids,omitempty"`
-	SubType     *string  `json:"subtype,omitempty"`
 	SubTypeIds  []string `json:"subtype-ids,omitempty"`
+	ScaleFactor Float    `json:"scale-by,omitempty"`
+	Aggregate   bool     `json:"aggreg"`
 }
 
 func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	var err error
-	var req ApiQueryRequest = ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	req := ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true}
+	if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -351,14 +351,24 @@ func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler
 			return publicKey, nil
 		})
 
+		switch {
+		case token.Valid:
+			cacheLock.Lock()
+			cache[rawtoken] = token
+			cacheLock.Unlock()
+		case errors.Is(err, jwt.ErrTokenMalformed):
+			log.Print("That is not a token")
+		case errors.Is(err, jwt.ErrTokenSignatureInvalid):
+			log.Print("Invalid signature")
+		case errors.Is(err, jwt.ErrTokenExpired) || errors.Is(err, jwt.ErrTokenNotValidYet):
+			log.Print("Token is either expired or not active yet")
+		default:
+			log.Print("Couldn't handle this token:", err)
+		}
 		if err != nil {
 			http.Error(rw, err.Error(), http.StatusUnauthorized)
 			return
 		}
-
-		cacheLock.Lock()
-		cache[rawtoken] = token
-		cacheLock.Unlock()
 
 		// Let request through...
 		next.ServeHTTP(rw, r)
