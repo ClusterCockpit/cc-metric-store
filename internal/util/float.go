@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"math"
@@ -11,8 +11,10 @@ import (
 // we have to use our own type which implements encoding/json.Marshaler itself.
 type Float float64
 
-var NaN Float = Float(math.NaN())
-var nullAsBytes []byte = []byte("null")
+var (
+	NaN         Float  = Float(math.NaN())
+	nullAsBytes []byte = []byte("null")
+)
 
 func (f Float) IsNaN() bool {
 	return math.IsNaN(float64(f))
@@ -55,7 +57,6 @@ func (fa FloatArray) MarshalJSON() ([]byte, error) {
 			buf = append(buf, `null`...)
 		} else {
 			buf = strconv.AppendFloat(buf, float64(fa[i]), 'f', 3, 64)
-
 		}
 	}
 	buf = append(buf, ']')

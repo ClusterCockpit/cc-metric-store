@@ -1,9 +1,13 @@
-package main
+package memstore
 
 import (
 	"errors"
 	"sync"
 	"unsafe"
+
+	"github.com/ClusterCockpit/cc-metric-store/internal/api"
+	"github.com/ClusterCockpit/cc-metric-store/internal/config"
+	"github.com/ClusterCockpit/cc-metric-store/internal/util"
 )
 
 // Default buffer capacity.
@@ -18,7 +22,7 @@ const (
 var bufferPool sync.Pool = sync.Pool{
 	New: func() interface{} {
 		return &buffer{
-			data: make([]Float, 0, BUFFER_CAP),
+			data: make([]util.Float, 0, BUFFER_CAP),
 		}
 	},
 }
@@ -33,11 +37,11 @@ var (
 // If `cap(data)` is reached, a new buffer is created and
 // becomes the new head of a buffer list.
 type buffer struct {
-	frequency  int64   // Time between two "slots"
-	start      int64   // Timestamp of when `data[0]` was written.
-	data       []Float // The slice should never reallocacte as `cap(data)` is respected.
-	prev, next *buffer // `prev` contains older data, `next` newer data.
-	archived   bool    // If true, this buffer is already archived
+	frequency  int64        // Time between two "slots"
+	start      int64        // Timestamp of when `data[0]` was written.
+	data       []util.Float // The slice should never reallocacte as `cap(data)` is respected.
+	prev, next *buffer      // `prev` contains older data, `next` newer data.
+	archived   bool         // If true, this buffer is already archived
 
 	closed bool
 	/*
@@ -66,7 +70,7 @@ func newBuffer(ts, freq int64) *buffer {
 // Otherwise, the existing buffer is returnd.
 // Normaly, only "newer" data should be written, but if the value would
 // end up in the same buffer anyways it is allowed.
-func (b *buffer) write(ts int64, value Float) (*buffer, error) {
+func (b *buffer) write(ts int64, value util.Float) (*buffer, error) {
 	if ts < b.start {
 		return nil, errors.New("cannot write value to buffer from past")
 	}
@@ -90,7 +94,7 @@ func (b *buffer) write(ts int64, value Float) (*buffer, error) {
 
 	// Fill up unwritten slots with NaN
 	for i := len(b.data); i < idx; i++ {
-		b.data = append(b.data, NaN)
+		b.data = append(b.data, util.NaN)
 	}
 
 	b.data = append(b.data, value)
@@ -154,7 +158,7 @@ func (b *buffer) close() {
 // This function goes back the buffer chain if `from` is older than the currents buffer start.
 // The loaded values are added to `data` and `data` is returned, possibly with a shorter length.
 // If `data` is not long enough to hold all values, this function will panic!
-func (b *buffer) read(from, to int64, data []Float) ([]Float, int64, int64, error) {
+func (b *buffer) read(from, to int64, data []util.Float) ([]util.Float, int64, int64, error) {
 	if from < b.firstWrite() {
 		if b.prev != nil {
 			return b.prev.read(from, to, data)
@@ -178,9 +182,9 @@ func (b *buffer) read(from, to int64, data []Float) ([]Float, int64, int64, erro
 			if b.next == nil || to <= b.next.start {
 				break
 			}
-			data[i] += NaN
+			data[i] += util.NaN
 		} else if t < b.start {
-			data[i] += NaN
+			data[i] += util.NaN
 			// } else if b.data[idx].IsNaN() {
 			// 	data[i] += interpolate(idx, b.data)
 		} else {
@@ -335,7 +339,7 @@ func (l *level) sizeInBytes() int64 {
 
 	for _, b := range l.metrics {
 		if b != nil {
-			size += b.count() * int64(unsafe.Sizeof(Float(0)))
+			size += b.count() * int64(unsafe.Sizeof(util.Float(0)))
 		}
 	}
 
@@ -348,12 +352,12 @@ func (l *level) sizeInBytes() int64 {
 
 type MemoryStore struct {
 	root    level // root of the tree structure
-	metrics map[string]MetricConfig
+	metrics map[string]config.MetricConfig
 }
 
 // Return a new, initialized instance of a MemoryStore.
 // Will panic if values in the metric configurations are invalid.
-func NewMemoryStore(metrics map[string]MetricConfig) *MemoryStore {
+func NewMemoryStore(metrics map[string]config.MetricConfig) *MemoryStore {
 	offset := 0
 	for key, config := range metrics {
 		if config.Frequency == 0 {
@@ -379,7 +383,7 @@ func NewMemoryStore(metrics map[string]MetricConfig) *MemoryStore {
 
 // Write all values in `metrics` to the level specified by `selector` for time `ts`.
 // Look at `findLevelOrCreate` for how selectors work.
-func (m *MemoryStore) Write(selector []string, ts int64, metrics []Metric) error {
+func (m *MemoryStore) Write(selector []string, ts int64, metrics []api.Metric) error {
 	var ok bool
 	for i, metric := range metrics {
 		if metric.mc.Frequency == 0 {
@@ -399,7 +403,7 @@ func (m *MemoryStore) GetLevel(selector []string) *level {
 }
 
 // Assumes that `minfo` in `metrics` is filled in!
-func (m *MemoryStore) WriteToLevel(l *level, selector []string, ts int64, metrics []Metric) error {
+func (m *MemoryStore) WriteToLevel(l *level, selector []string, ts int64, metrics []api.Metric) error {
 	l = l.findLevelOrCreate(selector, len(m.metrics))
 	l.lock.Lock()
 	defer l.lock.Unlock()

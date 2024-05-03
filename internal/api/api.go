@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"bufio"
@@ -262,15 +262,18 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 				if query.SubType != nil {
 					for _, subTypeId := range query.SubTypeIds {
 						sels = append(sels, Selector{
-							{String: req.Cluster}, {String: query.Hostname},
+							{String: req.Cluster},
+							{String: query.Hostname},
 							{String: *query.Type + typeId},
-							{String: *query.SubType + subTypeId}})
+							{String: *query.SubType + subTypeId},
+						})
 					}
 				} else {
 					sels = append(sels, Selector{
 						{String: req.Cluster},
 						{String: query.Hostname},
-						{String: *query.Type + typeId}})
+						{String: *query.Type + typeId},
+					})
 				}
 			}
 		}
@@ -347,7 +350,6 @@ func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler
 
 			return publicKey, nil
 		})
-
 		if err != nil {
 			http.Error(rw, err.Error(), http.StatusUnauthorized)
 			return

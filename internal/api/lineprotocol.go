@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"context"
@@ -9,15 +9,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ClusterCockpit/cc-metric-store/internal/config"
+	"github.com/ClusterCockpit/cc-metric-store/internal/memstore"
+	"github.com/ClusterCockpit/cc-metric-store/internal/util"
 	"github.com/influxdata/line-protocol/v2/lineprotocol"
 	"github.com/nats-io/nats.go"
 )
 
 type Metric struct {
 	Name  string
-	Value Float
-
-	mc MetricConfig
+	Value util.Float
+	mc    config.MetricConfig
 }
 
 // Currently unused, could be used to send messages via raw TCP.
@@ -84,7 +86,7 @@ func ReceiveRaw(ctx context.Context, listener net.Listener, handleLine func(*lin
 // Connect to a nats server and subscribe to "updates". This is a blocking
 // function. handleLine will be called for each line recieved via nats.
 // Send `true` through the done channel for gracefull termination.
-func ReceiveNats(conf *NatsConfig, handleLine func(*lineprotocol.Decoder, string) error, workers int, ctx context.Context) error {
+func ReceiveNats(conf *config.NatsConfig, handleLine func(*lineprotocol.Decoder, string) error, workers int, ctx context.Context) error {
 	var opts []nats.Option
 	if conf.Username != "" && conf.Password != "" {
 		opts = append(opts, nats.UserInfo(conf.Username, conf.Password))
@@ -175,7 +177,7 @@ func reorder(buf, prefix []byte) []byte {
 
 // Decode lines using dec and make write calls to the MemoryStore.
 // If a line is missing its cluster tag, use clusterDefault as default.
-func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
+func decodeLine(dec *lineprotocol.Decoder, memoryStore *memstore.MemoryStore, clusterDefault string) error {
 	// Reduce allocations in loop:
 	t := time.Now()
 	metric, metricBuf := Metric{}, make([]byte, 0, 16)
@@ -292,11 +294,11 @@ func decodeLine(dec *lineprotocol.Decoder, clusterDefault string) error {
 			}
 
 			if val.Kind() == lineprotocol.Float {
-				metric.Value = Float(val.FloatV())
+				metric.Value = util.Float(val.FloatV())
 			} else if val.Kind() == lineprotocol.Int {
-				metric.Value = Float(val.IntV())
+				metric.Value = util.Float(val.IntV())
 			} else if val.Kind() == lineprotocol.Uint {
-				metric.Value = Float(val.UintV())
+				metric.Value = util.Float(val.UintV())
 			} else {
 				return fmt.Errorf("unsupported value type in message: %s", val.Kind().String())
 			}

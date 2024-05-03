@@ -1,4 +1,4 @@
-package main
+package memstore
 
 import (
 	"archive/zip"

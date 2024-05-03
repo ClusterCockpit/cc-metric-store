@@ -3,9 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"flag"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -16,119 +14,22 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ClusterCockpit/cc-metric-store/internal/api"
+	"github.com/ClusterCockpit/cc-metric-store/internal/config"
+	"github.com/ClusterCockpit/cc-metric-store/internal/memstore"
 	"github.com/google/gops/agent"
 )
 
-// For aggregation over multiple values at different cpus/sockets/..., not time!
-type AggregationStrategy int
-
-const (
-	NoAggregation AggregationStrategy = iota
-	SumAggregation
-	AvgAggregation
+var (
+	conf           config.Config
+	memoryStore    *memstore.MemoryStore = nil
+	lastCheckpoint time.Time
 )
 
-func (as *AggregationStrategy) UnmarshalJSON(data []byte) error {
-	var str string
-	if err := json.Unmarshal(data, &str); err != nil {
-		return err
-	}
-
-	switch str {
-	case "":
-		*as = NoAggregation
-	case "sum":
-		*as = SumAggregation
-	case "avg":
-		*as = AvgAggregation
-	default:
-		return fmt.Errorf("invalid aggregation strategy: %#v", str)
-	}
-	return nil
-}
-
-type MetricConfig struct {
-	// Interval in seconds at which measurements will arive.
-	Frequency int64 `json:"frequency"`
-
-	// Can be 'sum', 'avg' or null. Describes how to aggregate metrics from the same timestep over the hierarchy.
-	Aggregation AggregationStrategy `json:"aggregation"`
-
-	// Private, used internally...
-	offset int
-}
-
-type HttpConfig struct {
-	// Address to bind to, for example "0.0.0.0:8081"
-	Address string `json:"address"`
-
-	// If not the empty string, use https with this as the certificate file
-	CertFile string `json:"https-cert-file"`
-
-	// If not the empty string, use https with this as the key file
-	KeyFile string `json:"https-key-file"`
-}
-
-type NatsConfig struct {
-	// Address of the nats server
-	Address string `json:"address"`
-
-	// Username/Password, optional
-	Username string `json:"username"`
-	Password string `json:"password"`
-
-	Subscriptions []struct {
-		// Channel name
-		SubscribeTo string `json:"subscribe-to"`
-
-		// Allow lines without a cluster tag, use this as default, optional
-		ClusterTag string `json:"cluster-tag"`
-	} `json:"subscriptions"`
-}
-
-type Config struct {
-	Metrics           map[string]MetricConfig `json:"metrics"`
-	RetentionInMemory string                  `json:"retention-in-memory"`
-	Nats              []*NatsConfig           `json:"nats"`
-	JwtPublicKey      string                  `json:"jwt-public-key"`
-	HttpConfig        *HttpConfig             `json:"http-api"`
-	Checkpoints       struct {
-		Interval string `json:"interval"`
-		RootDir  string `json:"directory"`
-		Restore  string `json:"restore"`
-	} `json:"checkpoints"`
-	Archive struct {
-		Interval      string `json:"interval"`
-		RootDir       string `json:"directory"`
-		DeleteInstead bool   `json:"delete-instead"`
-	} `json:"archive"`
-	Debug struct {
-		EnableGops bool   `json:"gops"`
-		DumpToFile string `json:"dump-to-file"`
-	} `json:"debug"`
-}
-
-var conf Config
-var memoryStore *MemoryStore = nil
-var lastCheckpoint time.Time
-
-var debugDumpLock sync.Mutex
-var debugDump io.Writer = io.Discard
-
-func loadConfiguration(file string) Config {
-	var config Config
-	configFile, err := os.Open(file)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer configFile.Close()
-	dec := json.NewDecoder(configFile)
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&config); err != nil {
-		log.Fatal(err)
-	}
-	return config
-}
+var (
+	debugDumpLock sync.Mutex
+	debugDump     io.Writer = io.Discard
+)
 
 func intervals(wg *sync.WaitGroup, ctx context.Context) {
 	wg.Add(3)
@@ -222,7 +123,7 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 			case <-ticks:
 				t := time.Now().Add(-d)
 				log.Printf("start archiving checkpoints (older than %s)...\n", t.Format(time.RFC3339))
-				n, err := ArchiveCheckpoints(conf.Checkpoints.RootDir, conf.Archive.RootDir, t.Unix(), conf.Archive.DeleteInstead)
+				n, err := memstore.ArchiveCheckpoints(conf.Checkpoints.RootDir, conf.Archive.RootDir, t.Unix(), conf.Archive.DeleteInstead)
 				if err != nil {
 					log.Printf("archiving failed: %s\n", err.Error())
 				} else {
@@ -241,8 +142,8 @@ func main() {
 	flag.Parse()
 
 	startupTime := time.Now()
-	conf = loadConfiguration(configFile)
-	memoryStore = NewMemoryStore(conf.Metrics)
+	conf = config.LoadConfiguration(configFile)
+	memoryStore = memstore.NewMemoryStore(conf.Metrics)
 
 	if enableGopsAgent || conf.Debug.EnableGops {
 		if err := agent.Listen(agent.Options{}); err != nil {
@@ -298,7 +199,7 @@ func main() {
 				continue
 			}
 
-			log.Println("Shuting down...")
+			log.Println("Shutting down...")
 			shutdown()
 		}
 	}()
@@ -308,7 +209,7 @@ func main() {
 	wg.Add(1)
 
 	go func() {
-		err := StartApiServer(ctx, conf.HttpConfig)
+		err := api.StartApiServer(ctx, conf.HttpConfig)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -322,8 +223,7 @@ func main() {
 			nc := natsConf
 			go func() {
 				// err := ReceiveNats(conf.Nats, decodeLine, runtime.NumCPU()-1, ctx)
-				err := ReceiveNats(nc, decodeLine, 1, ctx)
-
+				err := api.ReceiveNats(nc, decodeLine, 1, ctx)
 				if err != nil {
 					log.Fatal(err)
 				}

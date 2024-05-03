@@ -1,4 +1,4 @@
-package main
+package util
 
 import (
 	"errors"
@@ -94,7 +94,6 @@ func (m *MemoryStore) Stats(selector Selector, metric string, from, to int64) (*
 		n += 1
 		return nil
 	})
-
 	if err != nil {
 		return nil, 0, 0, err
 	}
