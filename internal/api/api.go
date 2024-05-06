@@ -6,7 +6,6 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,13 +13,11 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/ClusterCockpit/cc-metric-store/internal/memorystore"
 	"github.com/ClusterCockpit/cc-metric-store/internal/util"
-	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/mux"
 	"github.com/influxdata/line-protocol/v2/lineprotocol"
 )
@@ -320,51 +317,6 @@ func handleDebug(rw http.ResponseWriter, r *http.Request) {
 		rw.WriteHeader(http.StatusBadRequest)
 		rw.Write([]byte(err.Error()))
 	}
-}
-
-func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler {
-	cacheLock := sync.RWMutex{}
-	cache := map[string]*jwt.Token{}
-
-	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		authheader := r.Header.Get("Authorization")
-		if authheader == "" || !strings.HasPrefix(authheader, "Bearer ") {
-			http.Error(rw, "Use JWT Authentication", http.StatusUnauthorized)
-			return
-		}
-
-		rawtoken := authheader[len("Bearer "):]
-		cacheLock.RLock()
-		token, ok := cache[rawtoken]
-		cacheLock.RUnlock()
-		if ok && token.Claims.Valid() == nil {
-			next.ServeHTTP(rw, r)
-			return
-		}
-
-		// The actual token is ignored for now.
-		// In case expiration and so on are specified, the Parse function
-		// already returns an error for expired tokens.
-		var err error
-		token, err = jwt.Parse(rawtoken, func(t *jwt.Token) (interface{}, error) {
-			if t.Method != jwt.SigningMethodEdDSA {
-				return nil, errors.New("only Ed25519/EdDSA supported")
-			}
-
-			return publicKey, nil
-		})
-		if err != nil {
-			http.Error(rw, err.Error(), http.StatusUnauthorized)
-			return
-		}
-
-		cacheLock.Lock()
-		cache[rawtoken] = token
-		cacheLock.Unlock()
-
-		// Let request through...
-		next.ServeHTTP(rw, r)
-	})
 }
 
 func StartApiServer(ctx context.Context, httpConfig *config.HttpConfig) error {
