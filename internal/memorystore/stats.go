@@ -1,15 +1,18 @@
-package util
+package memorystore
 
 import (
 	"errors"
 	"math"
+
+	"github.com/ClusterCockpit/cc-metric-store/internal/config"
+	"github.com/ClusterCockpit/cc-metric-store/internal/util"
 )
 
 type Stats struct {
 	Samples int
-	Avg     Float
-	Min     Float
-	Max     Float
+	Avg     util.Float
+	Min     util.Float
+	Max     util.Float
 }
 
 func (b *buffer) stats(from, to int64) (Stats, int64, int64, error) {
@@ -54,9 +57,9 @@ func (b *buffer) stats(from, to int64) (Stats, int64, int64, error) {
 
 	return Stats{
 		Samples: samples,
-		Avg:     Float(sum) / Float(samples),
-		Min:     Float(min),
-		Max:     Float(max),
+		Avg:     util.Float(sum) / util.Float(samples),
+		Min:     util.Float(min),
+		Max:     util.Float(max),
 	}, from, t, nil
 }
 
@@ -68,14 +71,14 @@ func (m *MemoryStore) Stats(selector Selector, metric string, from, to int64) (*
 		return nil, 0, 0, errors.New("invalid time range")
 	}
 
-	minfo, ok := m.metrics[metric]
+	minfo, ok := m.Metrics[metric]
 	if !ok {
 		return nil, 0, 0, errors.New("unkown metric: " + metric)
 	}
 
 	n, samples := 0, 0
-	avg, min, max := Float(0), math.MaxFloat32, -math.MaxFloat32
-	err := m.root.findBuffers(selector, minfo.offset, func(b *buffer) error {
+	avg, min, max := util.Float(0), math.MaxFloat32, -math.MaxFloat32
+	err := m.root.findBuffers(selector, minfo.Offset, func(b *buffer) error {
 		stats, cfrom, cto, err := b.stats(from, to)
 		if err != nil {
 			return err
@@ -102,16 +105,16 @@ func (m *MemoryStore) Stats(selector Selector, metric string, from, to int64) (*
 		return nil, 0, 0, ErrNoData
 	}
 
-	if minfo.Aggregation == AvgAggregation {
-		avg /= Float(n)
-	} else if n > 1 && minfo.Aggregation != SumAggregation {
+	if minfo.Aggregation == config.AvgAggregation {
+		avg /= util.Float(n)
+	} else if n > 1 && minfo.Aggregation != config.SumAggregation {
 		return nil, 0, 0, errors.New("invalid aggregation")
 	}
 
 	return &Stats{
 		Samples: samples,
 		Avg:     avg,
-		Min:     Float(min),
-		Max:     Float(max),
+		Min:     util.Float(min),
+		Max:     util.Float(max),
 	}, from, to, nil
 }

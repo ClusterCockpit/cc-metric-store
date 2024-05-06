@@ -43,7 +43,7 @@ type MetricConfig struct {
 	Aggregation AggregationStrategy `json:"aggregation"`
 
 	// Private, used internally...
-	offset int
+	Offset int
 }
 
 type HttpConfig struct {

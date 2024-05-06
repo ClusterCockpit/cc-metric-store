@@ -1,4 +1,4 @@
-package memstore
+package memorystore
 
 import (
 	"archive/zip"
@@ -75,7 +75,7 @@ func init() {
 // The good thing: Only a host at a time is locked, so this function can run
 // in parallel to writes/reads.
 func (m *MemoryStore) ToCheckpoint(dir string, from, to int64) (int, error) {
-	levels := make([]*level, 0)
+	levels := make([]*Level, 0)
 	selectors := make([][]string, 0)
 	m.root.lock.RLock()
 	for sel1, l1 := range m.root.children {
@@ -89,7 +89,7 @@ func (m *MemoryStore) ToCheckpoint(dir string, from, to int64) (int, error) {
 	m.root.lock.RUnlock()
 
 	type workItem struct {
-		level    *level
+		level    *Level
 		dir      string
 		selector []string
 	}
@@ -136,7 +136,7 @@ func (m *MemoryStore) ToCheckpoint(dir string, from, to int64) (int, error) {
 	return int(n), nil
 }
 
-func (l *level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFile, error) {
+func (l *Level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFile, error) {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
@@ -147,7 +147,7 @@ func (l *level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFil
 		Children: make(map[string]*CheckpointFile),
 	}
 
-	for metric, minfo := range m.metrics {
+	for metric, minfo := range m.Metrics {
 		b := l.metrics[minfo.offset]
 		if b == nil {
 			continue
@@ -200,7 +200,7 @@ func (l *level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFil
 	return retval, nil
 }
 
-func (l *level) toCheckpoint(dir string, from, to int64, m *MemoryStore) error {
+func (l *Level) toCheckpoint(dir string, from, to int64, m *MemoryStore) error {
 	cf, err := l.toCheckpointFile(from, to, m)
 	if err != nil {
 		return err
@@ -211,11 +211,11 @@ func (l *level) toCheckpoint(dir string, from, to int64, m *MemoryStore) error {
 	}
 
 	filepath := path.Join(dir, fmt.Sprintf("%d.json", from))
-	f, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil && os.IsNotExist(err) {
-		err = os.MkdirAll(dir, 0755)
+		err = os.MkdirAll(dir, 0o755)
 		if err == nil {
-			f, err = os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
+			f, err = os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0o644)
 		}
 	}
 	if err != nil {
@@ -244,7 +244,7 @@ func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
 		go func() {
 			defer wg.Done()
 			for host := range work {
-				lvl := m.root.findLevelOrCreate(host[:], len(m.metrics))
+				lvl := m.root.findLevelOrCreate(host[:], len(m.Metrics))
 				nn, err := lvl.fromCheckpoint(filepath.Join(dir, host[0], host[1]), from, m)
 				if err != nil {
 					log.Fatalf("error while loading checkpoints: %s", err.Error())
@@ -302,7 +302,7 @@ done:
 	return int(n), nil
 }
 
-func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
+func (l *Level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 	for name, metric := range cf.Metrics {
 		n := len(metric.Data)
 		b := &buffer{
@@ -315,7 +315,7 @@ func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 		}
 		b.close()
 
-		minfo, ok := m.metrics[name]
+		minfo, ok := m.Metrics[name]
 		if !ok {
 			continue
 			// return errors.New("Unkown metric: " + name)
@@ -336,14 +336,14 @@ func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 	}
 
 	if len(cf.Children) > 0 && l.children == nil {
-		l.children = make(map[string]*level)
+		l.children = make(map[string]*Level)
 	}
 
 	for sel, childCf := range cf.Children {
 		child, ok := l.children[sel]
 		if !ok {
-			child = &level{
-				metrics:  make([]*buffer, len(m.metrics)),
+			child = &Level{
+				metrics:  make([]*buffer, len(m.Metrics)),
 				children: nil,
 			}
 			l.children[sel] = child
@@ -357,7 +357,7 @@ func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 	return nil
 }
 
-func (l *level) fromCheckpoint(dir string, from int64, m *MemoryStore) (int, error) {
+func (l *Level) fromCheckpoint(dir string, from int64, m *MemoryStore) (int, error) {
 	direntries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -371,9 +371,9 @@ func (l *level) fromCheckpoint(dir string, from int64, m *MemoryStore) (int, err
 	filesLoaded := 0
 	for _, e := range direntries {
 		if e.IsDir() {
-			child := &level{
-				metrics:  make([]*buffer, len(m.metrics)),
-				children: make(map[string]*level),
+			child := &Level{
+				metrics:  make([]*buffer, len(m.Metrics)),
+				children: make(map[string]*Level),
 			}
 
 			files, err := child.fromCheckpoint(path.Join(dir, e.Name()), from, m)
@@ -553,11 +553,11 @@ func archiveCheckpoints(dir string, archiveDir string, from int64, deleteInstead
 	}
 
 	filename := filepath.Join(archiveDir, fmt.Sprintf("%d.zip", from))
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil && os.IsNotExist(err) {
-		err = os.MkdirAll(archiveDir, 0755)
+		err = os.MkdirAll(archiveDir, 0o755)
 		if err == nil {
-			f, err = os.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0644)
+			f, err = os.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0o644)
 		}
 	}
 	if err != nil {

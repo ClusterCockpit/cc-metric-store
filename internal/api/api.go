@@ -17,19 +17,22 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ClusterCockpit/cc-metric-store/internal/config"
+	"github.com/ClusterCockpit/cc-metric-store/internal/memorystore"
+	"github.com/ClusterCockpit/cc-metric-store/internal/util"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/gorilla/mux"
 	"github.com/influxdata/line-protocol/v2/lineprotocol"
 )
 
 type ApiMetricData struct {
-	Error *string    `json:"error,omitempty"`
-	From  int64      `json:"from"`
-	To    int64      `json:"to"`
-	Data  FloatArray `json:"data,omitempty"`
-	Avg   Float      `json:"avg"`
-	Min   Float      `json:"min"`
-	Max   Float      `json:"max"`
+	Error *string         `json:"error,omitempty"`
+	From  int64           `json:"from"`
+	To    int64           `json:"to"`
+	Data  util.FloatArray `json:"data,omitempty"`
+	Avg   util.Float      `json:"avg"`
+	Min   util.Float      `json:"min"`
+	Max   util.Float      `json:"max"`
 }
 
 // TODO: Optimize this, just like the stats endpoint!
@@ -49,15 +52,15 @@ func (data *ApiMetricData) AddStats() {
 
 	if n > 0 {
 		avg := sum / float64(n)
-		data.Avg = Float(avg)
-		data.Min = Float(min)
-		data.Max = Float(max)
+		data.Avg = util.Float(avg)
+		data.Min = util.Float(min)
+		data.Max = util.Float(max)
 	} else {
-		data.Avg, data.Min, data.Max = NaN, NaN, NaN
+		data.Avg, data.Min, data.Max = util.NaN, util.NaN, util.NaN
 	}
 }
 
-func (data *ApiMetricData) ScaleBy(f Float) {
+func (data *ApiMetricData) ScaleBy(f util.Float) {
 	if f == 0 || f == 1 {
 		return
 	}
@@ -78,9 +81,9 @@ func (data *ApiMetricData) PadDataWithNull(from, to int64, metric string) {
 
 	if (data.From / minfo.Frequency) > (from / minfo.Frequency) {
 		padfront := int((data.From / minfo.Frequency) - (from / minfo.Frequency))
-		ndata := make([]Float, 0, padfront+len(data.Data))
+		ndata := make([]util.Float, 0, padfront+len(data.Data))
 		for i := 0; i < padfront; i++ {
-			ndata = append(ndata, NaN)
+			ndata = append(ndata, util.NaN)
 		}
 		for j := 0; j < len(data.Data); j++ {
 			ndata = append(ndata, data.Data[j])
@@ -212,11 +215,13 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ms := memorystore.GetMemoryStore()
+
 	response := ApiQueryResponse{
 		Results: make([][]ApiMetricData, 0, len(req.Queries)),
 	}
 	if req.ForAllNodes != nil {
-		nodes := memoryStore.ListChildren([]string{req.Cluster})
+		nodes := ms.ListChildren([]string{req.Cluster})
 		for _, node := range nodes {
 			for _, metric := range req.ForAllNodes {
 				q := ApiQuery{
@@ -364,7 +369,7 @@ func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler
 	})
 }
 
-func StartApiServer(ctx context.Context, httpConfig *HttpConfig) error {
+func StartApiServer(ctx context.Context, httpConfig *config.HttpConfig) error {
 	r := mux.NewRouter()
 
 	r.HandleFunc("/api/free", handleFree)

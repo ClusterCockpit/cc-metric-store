@@ -1,4 +1,4 @@
-package main
+package memorystore
 
 import (
 	"bufio"
@@ -29,7 +29,7 @@ func (b *buffer) debugDump(buf []byte) []byte {
 	return buf
 }
 
-func (l *level) debugDump(m *MemoryStore, w *bufio.Writer, lvlname string, buf []byte, depth int) ([]byte, error) {
+func (l *Level) debugDump(m *MemoryStore, w *bufio.Writer, lvlname string, buf []byte, depth int) ([]byte, error) {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 	for i := 0; i < depth; i++ {
@@ -40,7 +40,7 @@ func (l *level) debugDump(m *MemoryStore, w *bufio.Writer, lvlname string, buf [
 	buf = append(buf, "\":{\n"...)
 	depth += 1
 	objitems := 0
-	for name, mc := range m.metrics {
+	for name, mc := range m.Metrics {
 		if b := l.metrics[mc.offset]; b != nil {
 			for i := 0; i < depth; i++ {
 				buf = append(buf, '\t')

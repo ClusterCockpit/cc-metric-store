@@ -16,13 +16,13 @@ import (
 
 	"github.com/ClusterCockpit/cc-metric-store/internal/api"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
-	"github.com/ClusterCockpit/cc-metric-store/internal/memstore"
+	"github.com/ClusterCockpit/cc-metric-store/internal/memorystore"
 	"github.com/google/gops/agent"
 )
 
 var (
 	conf           config.Config
-	memoryStore    *memstore.MemoryStore = nil
+	ms             *memorystore.MemoryStore = nil
 	lastCheckpoint time.Time
 )
 
@@ -64,7 +64,7 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 			case <-ticks:
 				t := time.Now().Add(-d)
 				log.Printf("start freeing buffers (older than %s)...\n", t.Format(time.RFC3339))
-				freed, err := memoryStore.Free(nil, t.Unix())
+				freed, err := ms.Free(nil, t.Unix())
 				if err != nil {
 					log.Printf("freeing up buffers failed: %s\n", err.Error())
 				} else {
@@ -93,7 +93,7 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 			case <-ticks:
 				log.Printf("start checkpointing (starting at %s)...\n", lastCheckpoint.Format(time.RFC3339))
 				now := time.Now()
-				n, err := memoryStore.ToCheckpoint(conf.Checkpoints.RootDir,
+				n, err := ms.ToCheckpoint(conf.Checkpoints.RootDir,
 					lastCheckpoint.Unix(), now.Unix())
 				if err != nil {
 					log.Printf("checkpointing failed: %s\n", err.Error())
@@ -123,7 +123,7 @@ func intervals(wg *sync.WaitGroup, ctx context.Context) {
 			case <-ticks:
 				t := time.Now().Add(-d)
 				log.Printf("start archiving checkpoints (older than %s)...\n", t.Format(time.RFC3339))
-				n, err := memstore.ArchiveCheckpoints(conf.Checkpoints.RootDir, conf.Archive.RootDir, t.Unix(), conf.Archive.DeleteInstead)
+				n, err := memorystore.ArchiveCheckpoints(conf.Checkpoints.RootDir, conf.Archive.RootDir, t.Unix(), conf.Archive.DeleteInstead)
 				if err != nil {
 					log.Printf("archiving failed: %s\n", err.Error())
 				} else {
@@ -143,7 +143,8 @@ func main() {
 
 	startupTime := time.Now()
 	conf = config.LoadConfiguration(configFile)
-	memoryStore = memstore.NewMemoryStore(conf.Metrics)
+	memorystore.Init(conf.Metrics)
+	ms = memorystore.GetMemoryStore()
 
 	if enableGopsAgent || conf.Debug.EnableGops {
 		if err := agent.Listen(agent.Options{}); err != nil {
@@ -167,8 +168,8 @@ func main() {
 
 	restoreFrom := startupTime.Add(-d)
 	log.Printf("Loading checkpoints newer than %s\n", restoreFrom.Format(time.RFC3339))
-	files, err := memoryStore.FromCheckpoint(conf.Checkpoints.RootDir, restoreFrom.Unix())
-	loadedData := memoryStore.SizeInBytes() / 1024 / 1024 // In MB
+	files, err := ms.FromCheckpoint(conf.Checkpoints.RootDir, restoreFrom.Unix())
+	loadedData := ms.SizeInBytes() / 1024 / 1024 // In MB
 	if err != nil {
 		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
 	} else {
@@ -195,7 +196,7 @@ func main() {
 		for {
 			sig := <-sigs
 			if sig == syscall.SIGUSR1 {
-				memoryStore.DebugDump(bufio.NewWriter(os.Stdout), nil)
+				ms.DebugDump(bufio.NewWriter(os.Stdout), nil)
 				continue
 			}
 
@@ -223,7 +224,7 @@ func main() {
 			nc := natsConf
 			go func() {
 				// err := ReceiveNats(conf.Nats, decodeLine, runtime.NumCPU()-1, ctx)
-				err := api.ReceiveNats(nc, decodeLine, 1, ctx)
+				err := api.ReceiveNats(nc, ms, 1, ctx)
 				if err != nil {
 					log.Fatal(err)
 				}
@@ -235,7 +236,7 @@ func main() {
 	wg.Wait()
 
 	log.Printf("Writing to '%s'...\n", conf.Checkpoints.RootDir)
-	files, err = memoryStore.ToCheckpoint(conf.Checkpoints.RootDir, lastCheckpoint.Unix(), time.Now().Unix())
+	files, err = ms.ToCheckpoint(conf.Checkpoints.RootDir, lastCheckpoint.Unix(), time.Now().Unix())
 	if err != nil {
 		log.Printf("Writing checkpoint failed: %s\n", err.Error())
 	}
