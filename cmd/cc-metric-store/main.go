@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -19,12 +20,26 @@ import (
 	"github.com/google/gops/agent"
 )
 
+var (
+	date    string
+	commit  string
+	version string
+)
+
 func main() {
 	var configFile string
-	var enableGopsAgent bool
+	var enableGopsAgent, flagVersion bool
 	flag.StringVar(&configFile, "config", "./config.json", "configuration file")
 	flag.BoolVar(&enableGopsAgent, "gops", false, "Listen via github.com/google/gops/agent")
+	flag.BoolVar(&flagVersion, "version", false, "Show version information and exit")
 	flag.Parse()
+
+	if flagVersion {
+		fmt.Printf("Version:\t%s\n", version)
+		fmt.Printf("Git hash:\t%s\n", commit)
+		fmt.Printf("Build time:\t%s\n", date)
+		os.Exit(0)
+	}
 
 	startupTime := time.Now()
 	config.Init(configFile)
