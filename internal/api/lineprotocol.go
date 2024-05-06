@@ -191,7 +191,7 @@ func decodeLine(dec *lineprotocol.Decoder,
 	// cluster and host. By using `WriteToLevel` (level = host), we do not need
 	// to take the root- and cluster-level lock as often.
 	var lvl *memorystore.Level = nil
-	var prevCluster, prevHost string = "", ""
+	prevCluster, prevHost := "", ""
 
 	var ok bool
 	for dec.Next() {

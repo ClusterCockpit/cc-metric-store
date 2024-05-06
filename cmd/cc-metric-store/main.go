@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"flag"
-	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -20,120 +19,6 @@ import (
 	"github.com/google/gops/agent"
 )
 
-var (
-	conf           config.Config
-	ms             *memorystore.MemoryStore = nil
-	lastCheckpoint time.Time
-)
-
-var (
-	debugDumpLock sync.Mutex
-	debugDump     io.Writer = io.Discard
-)
-
-func intervals(wg *sync.WaitGroup, ctx context.Context) {
-	wg.Add(3)
-	// go func() {
-	// 	defer wg.Done()
-	// 	ticks := time.Tick(30 * time.Minute)
-	// 	for {
-	// 		select {
-	// 		case <-ctx.Done():
-	// 			return
-	// 		case <-ticks:
-	// 			runtime.GC()
-	// 		}
-	// 	}
-	// }()
-
-	go func() {
-		defer wg.Done()
-		d, err := time.ParseDuration(conf.RetentionInMemory)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if d <= 0 {
-			return
-		}
-
-		ticks := time.Tick(d / 2)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticks:
-				t := time.Now().Add(-d)
-				log.Printf("start freeing buffers (older than %s)...\n", t.Format(time.RFC3339))
-				freed, err := ms.Free(nil, t.Unix())
-				if err != nil {
-					log.Printf("freeing up buffers failed: %s\n", err.Error())
-				} else {
-					log.Printf("done: %d buffers freed\n", freed)
-				}
-			}
-		}
-	}()
-
-	lastCheckpoint = time.Now()
-	go func() {
-		defer wg.Done()
-		d, err := time.ParseDuration(conf.Checkpoints.Interval)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if d <= 0 {
-			return
-		}
-
-		ticks := time.Tick(d)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticks:
-				log.Printf("start checkpointing (starting at %s)...\n", lastCheckpoint.Format(time.RFC3339))
-				now := time.Now()
-				n, err := ms.ToCheckpoint(conf.Checkpoints.RootDir,
-					lastCheckpoint.Unix(), now.Unix())
-				if err != nil {
-					log.Printf("checkpointing failed: %s\n", err.Error())
-				} else {
-					log.Printf("done: %d checkpoint files created\n", n)
-					lastCheckpoint = now
-				}
-			}
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		d, err := time.ParseDuration(conf.Archive.Interval)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if d <= 0 {
-			return
-		}
-
-		ticks := time.Tick(d)
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticks:
-				t := time.Now().Add(-d)
-				log.Printf("start archiving checkpoints (older than %s)...\n", t.Format(time.RFC3339))
-				n, err := memorystore.ArchiveCheckpoints(conf.Checkpoints.RootDir, conf.Archive.RootDir, t.Unix(), conf.Archive.DeleteInstead)
-				if err != nil {
-					log.Printf("archiving failed: %s\n", err.Error())
-				} else {
-					log.Printf("done: %d files zipped and moved to archive\n", n)
-				}
-			}
-		}
-	}()
-}
-
 func main() {
 	var configFile string
 	var enableGopsAgent bool
@@ -142,33 +27,24 @@ func main() {
 	flag.Parse()
 
 	startupTime := time.Now()
-	conf = config.LoadConfiguration(configFile)
-	memorystore.Init(conf.Metrics)
-	ms = memorystore.GetMemoryStore()
+	config.Init(configFile)
+	memorystore.Init(config.Keys.Metrics)
+	ms := memorystore.GetMemoryStore()
 
-	if enableGopsAgent || conf.Debug.EnableGops {
+	if enableGopsAgent || config.Keys.Debug.EnableGops {
 		if err := agent.Listen(agent.Options{}); err != nil {
 			log.Fatal(err)
 		}
 	}
 
-	if conf.Debug.DumpToFile != "" {
-		f, err := os.Create(conf.Debug.DumpToFile)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		debugDump = f
-	}
-
-	d, err := time.ParseDuration(conf.Checkpoints.Restore)
+	d, err := time.ParseDuration(config.Keys.Checkpoints.Restore)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	restoreFrom := startupTime.Add(-d)
 	log.Printf("Loading checkpoints newer than %s\n", restoreFrom.Format(time.RFC3339))
-	files, err := ms.FromCheckpoint(conf.Checkpoints.RootDir, restoreFrom.Unix())
+	files, err := ms.FromCheckpoint(config.Keys.Checkpoints.RootDir, restoreFrom.Unix())
 	loadedData := ms.SizeInBytes() / 1024 / 1024 // In MB
 	if err != nil {
 		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
@@ -205,20 +81,24 @@ func main() {
 		}
 	}()
 
-	intervals(&wg, ctx)
+	wg.Add(3)
+
+	memorystore.Retention(&wg, ctx)
+	memorystore.Checkpointing(&wg, ctx)
+	memorystore.Archiving(&wg, ctx)
 
 	wg.Add(1)
 
 	go func() {
-		err := api.StartApiServer(ctx, conf.HttpConfig)
+		err := api.StartApiServer(ctx, config.Keys.HttpConfig)
 		if err != nil {
 			log.Fatal(err)
 		}
 		wg.Done()
 	}()
 
-	if conf.Nats != nil {
-		for _, natsConf := range conf.Nats {
+	if config.Keys.Nats != nil {
+		for _, natsConf := range config.Keys.Nats {
 			// TODO: When multiple nats configs share a URL, do a single connect.
 			wg.Add(1)
 			nc := natsConf
@@ -234,17 +114,5 @@ func main() {
 	}
 
 	wg.Wait()
-
-	log.Printf("Writing to '%s'...\n", conf.Checkpoints.RootDir)
-	files, err = ms.ToCheckpoint(conf.Checkpoints.RootDir, lastCheckpoint.Unix(), time.Now().Unix())
-	if err != nil {
-		log.Printf("Writing checkpoint failed: %s\n", err.Error())
-	}
-	log.Printf("Done! (%d files written)\n", files)
-
-	if closer, ok := debugDump.(io.Closer); ok {
-		if err := closer.Close(); err != nil {
-			log.Printf("error: %s", err.Error())
-		}
-	}
+	memorystore.Shutdown()
 }

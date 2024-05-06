@@ -27,9 +27,9 @@ import (
 
 type ApiMetricData struct {
 	Error *string         `json:"error,omitempty"`
+	Data  util.FloatArray `json:"data,omitempty"`
 	From  int64           `json:"from"`
 	To    int64           `json:"to"`
-	Data  util.FloatArray `json:"data,omitempty"`
 	Avg   util.Float      `json:"avg"`
 	Min   util.Float      `json:"min"`
 	Max   util.Float      `json:"max"`
@@ -73,8 +73,8 @@ func (data *ApiMetricData) ScaleBy(f util.Float) {
 	}
 }
 
-func (data *ApiMetricData) PadDataWithNull(from, to int64, metric string) {
-	minfo, ok := memoryStore.metrics[metric]
+func (data *ApiMetricData) PadDataWithNull(ms *memorystore.MemoryStore, from, to int64, metric string) {
+	minfo, ok := ms.Metrics[metric]
 	if !ok {
 		return
 	}
@@ -105,12 +105,12 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: lastCheckpoint might be modified by different go-routines.
-	// Load it using the sync/atomic package?
-	freeUpTo := lastCheckpoint.Unix()
-	if to < freeUpTo {
-		freeUpTo = to
-	}
+	// // TODO: lastCheckpoint might be modified by different go-routines.
+	// // Load it using the sync/atomic package?
+	// freeUpTo := lastCheckpoint.Unix()
+	// if to < freeUpTo {
+	// 	freeUpTo = to
+	// }
 
 	if r.Method != http.MethodPost {
 		http.Error(rw, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -125,9 +125,10 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ms := memorystore.GetMemoryStore()
 	n := 0
 	for _, sel := range selectors {
-		bn, err := memoryStore.Free(sel, freeUpTo)
+		bn, err := ms.Free(sel, to)
 		if err != nil {
 			http.Error(rw, err.Error(), http.StatusInternalServerError)
 			return
@@ -137,7 +138,7 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	rw.WriteHeader(http.StatusOK)
-	rw.Write([]byte(fmt.Sprintf("buffers freed: %d\n", n)))
+	fmt.Fprintf(rw, "buffers freed: %d\n", n)
 }
 
 func handleWrite(rw http.ResponseWriter, r *http.Request) {
@@ -153,26 +154,9 @@ func handleWrite(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if debugDump != io.Discard {
-		now := time.Now()
-		msg := make([]byte, 0, 512)
-		msg = append(msg, "\n--- local unix time: "...)
-		msg = strconv.AppendInt(msg, now.Unix(), 10)
-		msg = append(msg, " ---\n"...)
-
-		debugDumpLock.Lock()
-		defer debugDumpLock.Unlock()
-		if _, err := debugDump.Write(msg); err != nil {
-			log.Printf("error while writing to debug dump: %s", err.Error())
-		}
-		if _, err := debugDump.Write(bytes); err != nil {
-			log.Printf("error while writing to debug dump: %s", err.Error())
-		}
-		return
-	}
-
+	ms := memorystore.GetMemoryStore()
 	dec := lineprotocol.NewDecoderWithBytes(bytes)
-	if err := decodeLine(dec, r.URL.Query().Get("cluster")); err != nil {
+	if err := decodeLine(dec, ms, r.URL.Query().Get("cluster")); err != nil {
 		log.Printf("/api/write error: %s", err.Error())
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
@@ -182,13 +166,13 @@ func handleWrite(rw http.ResponseWriter, r *http.Request) {
 
 type ApiQueryRequest struct {
 	Cluster     string     `json:"cluster"`
+	Queries     []ApiQuery `json:"queries"`
+	ForAllNodes []string   `json:"for-all-nodes"`
 	From        int64      `json:"from"`
 	To          int64      `json:"to"`
 	WithStats   bool       `json:"with-stats"`
 	WithData    bool       `json:"with-data"`
 	WithPadding bool       `json:"with-padding"`
-	Queries     []ApiQuery `json:"queries"`
-	ForAllNodes []string   `json:"for-all-nodes"`
 }
 
 type ApiQueryResponse struct {
@@ -197,19 +181,19 @@ type ApiQueryResponse struct {
 }
 
 type ApiQuery struct {
-	Metric      string   `json:"metric"`
-	Hostname    string   `json:"host"`
-	Aggregate   bool     `json:"aggreg"`
-	ScaleFactor Float    `json:"scale-by,omitempty"`
-	Type        *string  `json:"type,omitempty"`
-	TypeIds     []string `json:"type-ids,omitempty"`
-	SubType     *string  `json:"subtype,omitempty"`
-	SubTypeIds  []string `json:"subtype-ids,omitempty"`
+	Type        *string    `json:"type,omitempty"`
+	SubType     *string    `json:"subtype,omitempty"`
+	Metric      string     `json:"metric"`
+	Hostname    string     `json:"host"`
+	TypeIds     []string   `json:"type-ids,omitempty"`
+	SubTypeIds  []string   `json:"subtype-ids,omitempty"`
+	ScaleFactor util.Float `json:"scale-by,omitempty"`
+	Aggregate   bool       `json:"aggreg"`
 }
 
 func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	var err error
-	var req ApiQueryRequest = ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true}
+	req := ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
@@ -235,29 +219,29 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, query := range req.Queries {
-		sels := make([]Selector, 0, 1)
+		sels := make([]util.Selector, 0, 1)
 		if query.Aggregate || query.Type == nil {
-			sel := Selector{{String: req.Cluster}, {String: query.Hostname}}
+			sel := util.Selector{{String: req.Cluster}, {String: query.Hostname}}
 			if query.Type != nil {
 				if len(query.TypeIds) == 1 {
-					sel = append(sel, SelectorElement{String: *query.Type + query.TypeIds[0]})
+					sel = append(sel, util.SelectorElement{String: *query.Type + query.TypeIds[0]})
 				} else {
 					ids := make([]string, len(query.TypeIds))
 					for i, id := range query.TypeIds {
 						ids[i] = *query.Type + id
 					}
-					sel = append(sel, SelectorElement{Group: ids})
+					sel = append(sel, util.SelectorElement{Group: ids})
 				}
 
 				if query.SubType != nil {
 					if len(query.SubTypeIds) == 1 {
-						sel = append(sel, SelectorElement{String: *query.SubType + query.SubTypeIds[0]})
+						sel = append(sel, util.SelectorElement{String: *query.SubType + query.SubTypeIds[0]})
 					} else {
 						ids := make([]string, len(query.SubTypeIds))
 						for i, id := range query.SubTypeIds {
 							ids[i] = *query.SubType + id
 						}
-						sel = append(sel, SelectorElement{Group: ids})
+						sel = append(sel, util.SelectorElement{Group: ids})
 					}
 				}
 			}
@@ -266,7 +250,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 			for _, typeId := range query.TypeIds {
 				if query.SubType != nil {
 					for _, subTypeId := range query.SubTypeIds {
-						sels = append(sels, Selector{
+						sels = append(sels, util.Selector{
 							{String: req.Cluster},
 							{String: query.Hostname},
 							{String: *query.Type + typeId},
@@ -274,7 +258,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 						})
 					}
 				} else {
-					sels = append(sels, Selector{
+					sels = append(sels, util.Selector{
 						{String: req.Cluster},
 						{String: query.Hostname},
 						{String: *query.Type + typeId},
@@ -289,7 +273,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 		res := make([]ApiMetricData, 0, len(sels))
 		for _, sel := range sels {
 			data := ApiMetricData{}
-			data.Data, data.From, data.To, err = memoryStore.Read(sel, query.Metric, req.From, req.To)
+			data.Data, data.From, data.To, err = ms.Read(sel, query.Metric, req.From, req.To)
 			// log.Printf("data: %#v, %#v, %#v, %#v", data.Data, data.From, data.To, err)
 			if err != nil {
 				msg := err.Error()
@@ -305,7 +289,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 				data.ScaleBy(query.ScaleFactor)
 			}
 			if req.WithPadding {
-				data.PadDataWithNull(req.From, req.To, query.Metric)
+				data.PadDataWithNull(ms, req.From, req.To, query.Metric)
 			}
 			if !req.WithData {
 				data.Data = nil
@@ -321,6 +305,20 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(bw).Encode(response); err != nil {
 		log.Print(err)
 		return
+	}
+}
+
+func handleDebug(rw http.ResponseWriter, r *http.Request) {
+	raw := r.URL.Query().Get("selector")
+	selector := []string{}
+	if len(raw) != 0 {
+		selector = strings.Split(raw, ":")
+	}
+
+	ms := memorystore.GetMemoryStore()
+	if err := ms.DebugDump(bufio.NewWriter(rw), selector); err != nil {
+		rw.WriteHeader(http.StatusBadRequest)
+		rw.Write([]byte(err.Error()))
 	}
 }
 
@@ -375,18 +373,7 @@ func StartApiServer(ctx context.Context, httpConfig *config.HttpConfig) error {
 	r.HandleFunc("/api/free", handleFree)
 	r.HandleFunc("/api/write", handleWrite)
 	r.HandleFunc("/api/query", handleQuery)
-	r.HandleFunc("/api/debug", func(rw http.ResponseWriter, r *http.Request) {
-		raw := r.URL.Query().Get("selector")
-		selector := []string{}
-		if len(raw) != 0 {
-			selector = strings.Split(raw, ":")
-		}
-
-		if err := memoryStore.DebugDump(bufio.NewWriter(rw), selector); err != nil {
-			rw.WriteHeader(http.StatusBadRequest)
-			rw.Write([]byte(err.Error()))
-		}
-	})
+	r.HandleFunc("/api/debug", handleDebug)
 
 	server := &http.Server{
 		Handler:      r,
@@ -395,8 +382,8 @@ func StartApiServer(ctx context.Context, httpConfig *config.HttpConfig) error {
 		ReadTimeout:  30 * time.Second,
 	}
 
-	if len(conf.JwtPublicKey) > 0 {
-		buf, err := base64.StdEncoding.DecodeString(conf.JwtPublicKey)
+	if len(config.Keys.JwtPublicKey) > 0 {
+		buf, err := base64.StdEncoding.DecodeString(config.Keys.JwtPublicKey)
 		if err != nil {
 			return err
 		}

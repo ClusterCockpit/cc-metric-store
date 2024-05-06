@@ -41,7 +41,7 @@ func (l *Level) debugDump(m *MemoryStore, w *bufio.Writer, lvlname string, buf [
 	depth += 1
 	objitems := 0
 	for name, mc := range m.Metrics {
-		if b := l.metrics[mc.offset]; b != nil {
+		if b := l.metrics[mc.Offset]; b != nil {
 			for i := 0; i < depth; i++ {
 				buf = append(buf, '\t')
 			}

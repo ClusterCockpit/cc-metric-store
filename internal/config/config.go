@@ -96,8 +96,9 @@ type Config struct {
 	Nats []*NatsConfig `json:"nats"`
 }
 
-func LoadConfiguration(file string) Config {
-	var config Config
+var Keys Config
+
+func Init(file string) {
 	configFile, err := os.Open(file)
 	if err != nil {
 		log.Fatal(err)
@@ -105,8 +106,7 @@ func LoadConfiguration(file string) Config {
 	defer configFile.Close()
 	dec := json.NewDecoder(configFile)
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&config); err != nil {
+	if err := dec.Decode(&Keys); err != nil {
 		log.Fatal(err)
 	}
-	return config
 }

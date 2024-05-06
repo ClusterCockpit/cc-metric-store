@@ -66,7 +66,7 @@ func (b *buffer) stats(from, to int64) (Stats, int64, int64, error) {
 // Returns statistics for the requested metric on the selected node/level.
 // Data is aggregated to the selected level the same way as in `MemoryStore.Read`.
 // If `Stats.Samples` is zero, the statistics should not be considered as valid.
-func (m *MemoryStore) Stats(selector Selector, metric string, from, to int64) (*Stats, int64, int64, error) {
+func (m *MemoryStore) Stats(selector util.Selector, metric string, from, to int64) (*Stats, int64, int64, error) {
 	if from > to {
 		return nil, 0, 0, errors.New("invalid time range")
 	}

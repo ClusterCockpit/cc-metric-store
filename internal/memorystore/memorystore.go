@@ -1,9 +1,12 @@
 package memorystore
 
 import (
+	"context"
 	"errors"
 	"log"
+	"runtime"
 	"sync"
+	"time"
 
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/ClusterCockpit/cc-metric-store/internal/util"
@@ -14,6 +17,16 @@ var (
 	msInstance *MemoryStore
 )
 
+var NumWorkers int = 4
+
+func init() {
+	maxWorkers := 10
+	NumWorkers = runtime.NumCPU()/2 + 1
+	if NumWorkers > maxWorkers {
+		NumWorkers = maxWorkers
+	}
+}
+
 type Metric struct {
 	Name         string
 	Value        util.Float
@@ -21,8 +34,8 @@ type Metric struct {
 }
 
 type MemoryStore struct {
-	root    Level // root of the tree structure
 	Metrics map[string]config.MetricConfig
+	root    Level
 }
 
 // Create a new, initialized instance of a MemoryStore.
@@ -59,6 +72,54 @@ func GetMemoryStore() *MemoryStore {
 	}
 
 	return msInstance
+}
+
+func Shutdown() {
+	ms := GetMemoryStore()
+	log.Printf("Writing to '%s'...\n", config.Keys.Checkpoints.RootDir)
+	files, err := ms.ToCheckpoint(config.Keys.Checkpoints.RootDir, lastCheckpoint.Unix(), time.Now().Unix())
+	if err != nil {
+		log.Printf("Writing checkpoint failed: %s\n", err.Error())
+	}
+	log.Printf("Done! (%d files written)\n", files)
+}
+
+func Retention(wg *sync.WaitGroup, ctx context.Context) {
+	ms := GetMemoryStore()
+
+	go func() {
+		defer wg.Done()
+		d, err := time.ParseDuration(config.Keys.RetentionInMemory)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if d <= 0 {
+			return
+		}
+
+		ticks := func() <-chan time.Time {
+			d := d / 2
+			if d <= 0 {
+				return nil
+			}
+			return time.NewTicker(d).C
+		}()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticks:
+				t := time.Now().Add(-d)
+				log.Printf("start freeing buffers (older than %s)...\n", t.Format(time.RFC3339))
+				freed, err := ms.Free(nil, t.Unix())
+				if err != nil {
+					log.Printf("freeing up buffers failed: %s\n", err.Error())
+				} else {
+					log.Printf("done: %d buffers freed\n", freed)
+				}
+			}
+		}
+	}()
 }
 
 // Write all values in `metrics` to the level specified by `selector` for time `ts`.
@@ -117,7 +178,7 @@ func (m *MemoryStore) WriteToLevel(l *Level, selector []string, ts int64, metric
 // If the level does not hold the metric itself, the data will be aggregated recursively from the children.
 // The second and third return value are the actual from/to for the data. Those can be different from
 // the range asked for if no data was available.
-func (m *MemoryStore) Read(selector Selector, metric string, from, to int64) ([]util.Float, int64, int64, error) {
+func (m *MemoryStore) Read(selector util.Selector, metric string, from, to int64) ([]util.Float, int64, int64, error) {
 	if from > to {
 		return nil, 0, 0, errors.New("invalid time range")
 	}

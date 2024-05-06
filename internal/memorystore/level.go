@@ -12,9 +12,9 @@ import (
 // Can be both a leaf or a inner node. In this tree structue, inner nodes can
 // also hold data (in `metrics`).
 type Level struct {
+	children map[string]*Level
+	metrics  []*buffer
 	lock     sync.RWMutex
-	metrics  []*buffer         // Every level can store metrics.
-	children map[string]*Level // Lower levels.
 }
 
 // Find the correct level for the given selector, creating it if
@@ -126,7 +126,7 @@ func (l *Level) findLevel(selector []string) *Level {
 	return lvl.findLevel(selector[1:])
 }
 
-func (l *Level) findBuffers(selector Selector, offset int, f func(b *buffer) error) error {
+func (l *Level) findBuffers(selector util.Selector, offset int, f func(b *buffer) error) error {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 

@@ -1,4 +1,4 @@
-package memorystore
+package util
 
 import (
 	"encoding/json"
@@ -6,9 +6,9 @@ import (
 )
 
 type SelectorElement struct {
-	Any    bool
 	String string
 	Group  []string
+	Any    bool
 }
 
 func (se *SelectorElement) UnmarshalJSON(input []byte) error {

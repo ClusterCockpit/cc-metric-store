@@ -34,21 +34,13 @@ var (
 // If `cap(data)` is reached, a new buffer is created and
 // becomes the new head of a buffer list.
 type buffer struct {
-	frequency  int64        // Time between two "slots"
-	start      int64        // Timestamp of when `data[0]` was written.
-	data       []util.Float // The slice should never reallocacte as `cap(data)` is respected.
-	prev, next *buffer      // `prev` contains older data, `next` newer data.
-	archived   bool         // If true, this buffer is already archived
-
-	closed bool
-	/*
-		statisticts struct {
-			samples int
-			min     Float
-			max     Float
-			avg     Float
-		}
-	*/
+	prev      *buffer
+	next      *buffer
+	data      []util.Float
+	frequency int64
+	start     int64
+	archived  bool
+	closed    bool
 }
 
 func newBuffer(ts, freq int64) *buffer {
@@ -163,8 +155,8 @@ func (b *buffer) read(from, to int64, data []util.Float) ([]util.Float, int64, i
 		from = b.firstWrite()
 	}
 
-	var i int = 0
-	var t int64 = from
+	i := 0
+	t := from
 	for ; t < to; t += b.frequency {
 		idx := int((t - b.start) / b.frequency)
 		if idx >= cap(b.data) {
