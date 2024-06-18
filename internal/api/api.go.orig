@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"bufio"
@@ -6,7 +6,6 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,15 +13,29 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
+<<<<<<< HEAD:internal/api/api.go
+	"github.com/ClusterCockpit/cc-metric-store/internal/config"
+	"github.com/ClusterCockpit/cc-metric-store/internal/memorystore"
+	"github.com/ClusterCockpit/cc-metric-store/internal/util"
+=======
 	"github.com/golang-jwt/jwt/v5"
+>>>>>>> main:api.go
 	"github.com/gorilla/mux"
 	"github.com/influxdata/line-protocol/v2/lineprotocol"
 )
 
 type ApiMetricData struct {
+<<<<<<< HEAD:internal/api/api.go
+	Error *string         `json:"error,omitempty"`
+	Data  util.FloatArray `json:"data,omitempty"`
+	From  int64           `json:"from"`
+	To    int64           `json:"to"`
+	Avg   util.Float      `json:"avg"`
+	Min   util.Float      `json:"min"`
+	Max   util.Float      `json:"max"`
+=======
 	Error *string    `json:"error,omitempty"`
 	Data  FloatArray `json:"data,omitempty"`
 	From  int64      `json:"from"`
@@ -30,6 +43,7 @@ type ApiMetricData struct {
 	Avg   Float      `json:"avg"`
 	Min   Float      `json:"min"`
 	Max   Float      `json:"max"`
+>>>>>>> main:api.go
 }
 
 // TODO: Optimize this, just like the stats endpoint!
@@ -49,15 +63,15 @@ func (data *ApiMetricData) AddStats() {
 
 	if n > 0 {
 		avg := sum / float64(n)
-		data.Avg = Float(avg)
-		data.Min = Float(min)
-		data.Max = Float(max)
+		data.Avg = util.Float(avg)
+		data.Min = util.Float(min)
+		data.Max = util.Float(max)
 	} else {
-		data.Avg, data.Min, data.Max = NaN, NaN, NaN
+		data.Avg, data.Min, data.Max = util.NaN, util.NaN, util.NaN
 	}
 }
 
-func (data *ApiMetricData) ScaleBy(f Float) {
+func (data *ApiMetricData) ScaleBy(f util.Float) {
 	if f == 0 || f == 1 {
 		return
 	}
@@ -70,17 +84,17 @@ func (data *ApiMetricData) ScaleBy(f Float) {
 	}
 }
 
-func (data *ApiMetricData) PadDataWithNull(from, to int64, metric string) {
-	minfo, ok := memoryStore.metrics[metric]
+func (data *ApiMetricData) PadDataWithNull(ms *memorystore.MemoryStore, from, to int64, metric string) {
+	minfo, ok := ms.Metrics[metric]
 	if !ok {
 		return
 	}
 
 	if (data.From / minfo.Frequency) > (from / minfo.Frequency) {
 		padfront := int((data.From / minfo.Frequency) - (from / minfo.Frequency))
-		ndata := make([]Float, 0, padfront+len(data.Data))
+		ndata := make([]util.Float, 0, padfront+len(data.Data))
 		for i := 0; i < padfront; i++ {
-			ndata = append(ndata, NaN)
+			ndata = append(ndata, util.NaN)
 		}
 		for j := 0; j < len(data.Data); j++ {
 			ndata = append(ndata, data.Data[j])
@@ -102,12 +116,12 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: lastCheckpoint might be modified by different go-routines.
-	// Load it using the sync/atomic package?
-	freeUpTo := lastCheckpoint.Unix()
-	if to < freeUpTo {
-		freeUpTo = to
-	}
+	// // TODO: lastCheckpoint might be modified by different go-routines.
+	// // Load it using the sync/atomic package?
+	// freeUpTo := lastCheckpoint.Unix()
+	// if to < freeUpTo {
+	// 	freeUpTo = to
+	// }
 
 	if r.Method != http.MethodPost {
 		http.Error(rw, "Method Not Allowed", http.StatusMethodNotAllowed)
@@ -122,9 +136,10 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ms := memorystore.GetMemoryStore()
 	n := 0
 	for _, sel := range selectors {
-		bn, err := memoryStore.Free(sel, freeUpTo)
+		bn, err := ms.Free(sel, to)
 		if err != nil {
 			http.Error(rw, err.Error(), http.StatusInternalServerError)
 			return
@@ -150,26 +165,9 @@ func handleWrite(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if debugDump != io.Discard {
-		now := time.Now()
-		msg := make([]byte, 0, 512)
-		msg = append(msg, "\n--- local unix time: "...)
-		msg = strconv.AppendInt(msg, now.Unix(), 10)
-		msg = append(msg, " ---\n"...)
-
-		debugDumpLock.Lock()
-		defer debugDumpLock.Unlock()
-		if _, err := debugDump.Write(msg); err != nil {
-			log.Printf("error while writing to debug dump: %s", err.Error())
-		}
-		if _, err := debugDump.Write(bytes); err != nil {
-			log.Printf("error while writing to debug dump: %s", err.Error())
-		}
-		return
-	}
-
+	ms := memorystore.GetMemoryStore()
 	dec := lineprotocol.NewDecoderWithBytes(bytes)
-	if err := decodeLine(dec, r.URL.Query().Get("cluster")); err != nil {
+	if err := decodeLine(dec, ms, r.URL.Query().Get("cluster")); err != nil {
 		log.Printf("/api/write error: %s", err.Error())
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
@@ -194,6 +192,16 @@ type ApiQueryResponse struct {
 }
 
 type ApiQuery struct {
+<<<<<<< HEAD:internal/api/api.go
+	Type        *string    `json:"type,omitempty"`
+	SubType     *string    `json:"subtype,omitempty"`
+	Metric      string     `json:"metric"`
+	Hostname    string     `json:"host"`
+	TypeIds     []string   `json:"type-ids,omitempty"`
+	SubTypeIds  []string   `json:"subtype-ids,omitempty"`
+	ScaleFactor util.Float `json:"scale-by,omitempty"`
+	Aggregate   bool       `json:"aggreg"`
+=======
 	Type        *string  `json:"type,omitempty"`
 	SubType     *string  `json:"subtype,omitempty"`
 	Metric      string   `json:"metric"`
@@ -202,21 +210,28 @@ type ApiQuery struct {
 	SubTypeIds  []string `json:"subtype-ids,omitempty"`
 	ScaleFactor Float    `json:"scale-by,omitempty"`
 	Aggregate   bool     `json:"aggreg"`
+>>>>>>> main:api.go
 }
 
 func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	var err error
 	req := ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true}
+<<<<<<< HEAD:internal/api/api.go
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+=======
 	if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
+>>>>>>> main:api.go
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	ms := memorystore.GetMemoryStore()
 
 	response := ApiQueryResponse{
 		Results: make([][]ApiMetricData, 0, len(req.Queries)),
 	}
 	if req.ForAllNodes != nil {
-		nodes := memoryStore.ListChildren([]string{req.Cluster})
+		nodes := ms.ListChildren([]string{req.Cluster})
 		for _, node := range nodes {
 			for _, metric := range req.ForAllNodes {
 				q := ApiQuery{
@@ -230,29 +245,29 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, query := range req.Queries {
-		sels := make([]Selector, 0, 1)
+		sels := make([]util.Selector, 0, 1)
 		if query.Aggregate || query.Type == nil {
-			sel := Selector{{String: req.Cluster}, {String: query.Hostname}}
+			sel := util.Selector{{String: req.Cluster}, {String: query.Hostname}}
 			if query.Type != nil {
 				if len(query.TypeIds) == 1 {
-					sel = append(sel, SelectorElement{String: *query.Type + query.TypeIds[0]})
+					sel = append(sel, util.SelectorElement{String: *query.Type + query.TypeIds[0]})
 				} else {
 					ids := make([]string, len(query.TypeIds))
 					for i, id := range query.TypeIds {
 						ids[i] = *query.Type + id
 					}
-					sel = append(sel, SelectorElement{Group: ids})
+					sel = append(sel, util.SelectorElement{Group: ids})
 				}
 
 				if query.SubType != nil {
 					if len(query.SubTypeIds) == 1 {
-						sel = append(sel, SelectorElement{String: *query.SubType + query.SubTypeIds[0]})
+						sel = append(sel, util.SelectorElement{String: *query.SubType + query.SubTypeIds[0]})
 					} else {
 						ids := make([]string, len(query.SubTypeIds))
 						for i, id := range query.SubTypeIds {
 							ids[i] = *query.SubType + id
 						}
-						sel = append(sel, SelectorElement{Group: ids})
+						sel = append(sel, util.SelectorElement{Group: ids})
 					}
 				}
 			}
@@ -261,7 +276,11 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 			for _, typeId := range query.TypeIds {
 				if query.SubType != nil {
 					for _, subTypeId := range query.SubTypeIds {
+<<<<<<< HEAD:internal/api/api.go
+						sels = append(sels, util.Selector{
+=======
 						sels = append(sels, Selector{
+>>>>>>> main:api.go
 							{String: req.Cluster},
 							{String: query.Hostname},
 							{String: *query.Type + typeId},
@@ -269,7 +288,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 						})
 					}
 				} else {
-					sels = append(sels, Selector{
+					sels = append(sels, util.Selector{
 						{String: req.Cluster},
 						{String: query.Hostname},
 						{String: *query.Type + typeId},
@@ -284,7 +303,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 		res := make([]ApiMetricData, 0, len(sels))
 		for _, sel := range sels {
 			data := ApiMetricData{}
-			data.Data, data.From, data.To, err = memoryStore.Read(sel, query.Metric, req.From, req.To)
+			data.Data, data.From, data.To, err = ms.Read(sel, query.Metric, req.From, req.To)
 			// log.Printf("data: %#v, %#v, %#v, %#v", data.Data, data.From, data.To, err)
 			if err != nil {
 				msg := err.Error()
@@ -300,7 +319,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 				data.ScaleBy(query.ScaleFactor)
 			}
 			if req.WithPadding {
-				data.PadDataWithNull(req.From, req.To, query.Metric)
+				data.PadDataWithNull(ms, req.From, req.To, query.Metric)
 			}
 			if !req.WithData {
 				data.Data = nil
@@ -319,10 +338,20 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler {
-	cacheLock := sync.RWMutex{}
-	cache := map[string]*jwt.Token{}
+func handleDebug(rw http.ResponseWriter, r *http.Request) {
+	raw := r.URL.Query().Get("selector")
+	selector := []string{}
+	if len(raw) != 0 {
+		selector = strings.Split(raw, ":")
+	}
 
+<<<<<<< HEAD:internal/api/api.go
+	ms := memorystore.GetMemoryStore()
+	if err := ms.DebugDump(bufio.NewWriter(rw), selector); err != nil {
+		rw.WriteHeader(http.StatusBadRequest)
+		rw.Write([]byte(err.Error()))
+	}
+=======
 	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		authheader := r.Header.Get("Authorization")
 		if authheader == "" || !strings.HasPrefix(authheader, "Bearer ") {
@@ -373,26 +402,16 @@ func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler
 		// Let request through...
 		next.ServeHTTP(rw, r)
 	})
+>>>>>>> main:api.go
 }
 
-func StartApiServer(ctx context.Context, httpConfig *HttpConfig) error {
+func StartApiServer(ctx context.Context, httpConfig *config.HttpConfig) error {
 	r := mux.NewRouter()
 
 	r.HandleFunc("/api/free", handleFree)
 	r.HandleFunc("/api/write", handleWrite)
 	r.HandleFunc("/api/query", handleQuery)
-	r.HandleFunc("/api/debug", func(rw http.ResponseWriter, r *http.Request) {
-		raw := r.URL.Query().Get("selector")
-		selector := []string{}
-		if len(raw) != 0 {
-			selector = strings.Split(raw, ":")
-		}
-
-		if err := memoryStore.DebugDump(bufio.NewWriter(rw), selector); err != nil {
-			rw.WriteHeader(http.StatusBadRequest)
-			rw.Write([]byte(err.Error()))
-		}
-	})
+	r.HandleFunc("/api/debug", handleDebug)
 
 	server := &http.Server{
 		Handler:      r,
@@ -401,8 +420,8 @@ func StartApiServer(ctx context.Context, httpConfig *HttpConfig) error {
 		ReadTimeout:  30 * time.Second,
 	}
 
-	if len(conf.JwtPublicKey) > 0 {
-		buf, err := base64.StdEncoding.DecodeString(conf.JwtPublicKey)
+	if len(config.Keys.JwtPublicKey) > 0 {
+		buf, err := base64.StdEncoding.DecodeString(config.Keys.JwtPublicKey)
 		if err != nil {
 			return err
 		}

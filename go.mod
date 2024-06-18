@@ -3,7 +3,7 @@ module github.com/ClusterCockpit/cc-metric-store
 go 1.19
 
 require (
-	github.com/golang-jwt/jwt/v5 v5.2.1
+	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/google/gops v0.3.28
 	github.com/gorilla/mux v1.8.1
 	github.com/influxdata/line-protocol/v2 v2.2.1

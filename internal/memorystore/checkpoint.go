@@ -1,12 +1,11 @@
-package main
+package memorystore
 
 import (
-	"archive/zip"
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -18,13 +17,66 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
+
+	"github.com/ClusterCockpit/cc-metric-store/internal/config"
+	"github.com/ClusterCockpit/cc-metric-store/internal/util"
 )
 
 // Whenever changed, update MarshalJSON as well!
 type CheckpointMetrics struct {
-	Frequency int64   `json:"frequency"`
-	Start     int64   `json:"start"`
-	Data      []Float `json:"data"`
+	Data      []util.Float `json:"data"`
+	Frequency int64        `json:"frequency"`
+	Start     int64        `json:"start"`
+}
+
+type CheckpointFile struct {
+	Metrics  map[string]*CheckpointMetrics `json:"metrics"`
+	Children map[string]*CheckpointFile    `json:"children"`
+	From     int64                         `json:"from"`
+	To       int64                         `json:"to"`
+}
+
+var lastCheckpoint time.Time
+
+func Checkpointing(wg *sync.WaitGroup, ctx context.Context) {
+	lastCheckpoint = time.Now()
+	ms := GetMemoryStore()
+
+	go func() {
+		defer wg.Done()
+		d, err := time.ParseDuration(config.Keys.Checkpoints.Interval)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if d <= 0 {
+			return
+		}
+
+		ticks := func() <-chan time.Time {
+			if d <= 0 {
+				return nil
+			}
+			return time.NewTicker(d).C
+		}()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticks:
+				log.Printf("start checkpointing (starting at %s)...\n", lastCheckpoint.Format(time.RFC3339))
+				now := time.Now()
+				n, err := ms.ToCheckpoint(config.Keys.Checkpoints.RootDir,
+					lastCheckpoint.Unix(), now.Unix())
+				if err != nil {
+					log.Printf("checkpointing failed: %s\n", err.Error())
+				} else {
+					log.Printf("done: %d checkpoint files created\n", n)
+					lastCheckpoint = now
+				}
+			}
+		}
+	}()
 }
 
 // As `Float` implements a custom MarshalJSON() function,
@@ -51,31 +103,12 @@ func (cm *CheckpointMetrics) MarshalJSON() ([]byte, error) {
 	return buf, nil
 }
 
-type CheckpointFile struct {
-	From     int64                         `json:"from"`
-	To       int64                         `json:"to"`
-	Metrics  map[string]*CheckpointMetrics `json:"metrics"`
-	Children map[string]*CheckpointFile    `json:"children"`
-}
-
-var ErrNoNewData error = errors.New("all data already archived")
-
-var NumWorkers int = 4
-
-func init() {
-	maxWorkers := 10
-	NumWorkers = runtime.NumCPU()/2 + 1
-	if NumWorkers > maxWorkers {
-		NumWorkers = maxWorkers
-	}
-}
-
 // Metrics stored at the lowest 2 levels are not stored away (root and cluster)!
 // On a per-host basis a new JSON file is created. I have no idea if this will scale.
 // The good thing: Only a host at a time is locked, so this function can run
 // in parallel to writes/reads.
 func (m *MemoryStore) ToCheckpoint(dir string, from, to int64) (int, error) {
-	levels := make([]*level, 0)
+	levels := make([]*Level, 0)
 	selectors := make([][]string, 0)
 	m.root.lock.RLock()
 	for sel1, l1 := range m.root.children {
@@ -89,7 +122,7 @@ func (m *MemoryStore) ToCheckpoint(dir string, from, to int64) (int, error) {
 	m.root.lock.RUnlock()
 
 	type workItem struct {
-		level    *level
+		level    *Level
 		dir      string
 		selector []string
 	}
@@ -136,7 +169,7 @@ func (m *MemoryStore) ToCheckpoint(dir string, from, to int64) (int, error) {
 	return int(n), nil
 }
 
-func (l *level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFile, error) {
+func (l *Level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFile, error) {
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
@@ -147,8 +180,8 @@ func (l *level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFil
 		Children: make(map[string]*CheckpointFile),
 	}
 
-	for metric, minfo := range m.metrics {
-		b := l.metrics[minfo.offset]
+	for metric, minfo := range m.Metrics {
+		b := l.metrics[minfo.Offset]
 		if b == nil {
 			continue
 		}
@@ -165,14 +198,14 @@ func (l *level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFil
 			continue
 		}
 
-		data := make([]Float, (to-from)/b.frequency+1)
+		data := make([]util.Float, (to-from)/b.frequency+1)
 		data, start, end, err := b.read(from, to, data)
 		if err != nil {
 			return nil, err
 		}
 
 		for i := int((end - start) / b.frequency); i < len(data); i++ {
-			data[i] = NaN
+			data[i] = util.NaN
 		}
 
 		retval.Metrics[metric] = &CheckpointMetrics{
@@ -200,7 +233,7 @@ func (l *level) toCheckpointFile(from, to int64, m *MemoryStore) (*CheckpointFil
 	return retval, nil
 }
 
-func (l *level) toCheckpoint(dir string, from, to int64, m *MemoryStore) error {
+func (l *Level) toCheckpoint(dir string, from, to int64, m *MemoryStore) error {
 	cf, err := l.toCheckpointFile(from, to, m)
 	if err != nil {
 		return err
@@ -211,11 +244,11 @@ func (l *level) toCheckpoint(dir string, from, to int64, m *MemoryStore) error {
 	}
 
 	filepath := path.Join(dir, fmt.Sprintf("%d.json", from))
-	f, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil && os.IsNotExist(err) {
-		err = os.MkdirAll(dir, 0755)
+		err = os.MkdirAll(dir, 0o755)
 		if err == nil {
-			f, err = os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
+			f, err = os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0o644)
 		}
 	}
 	if err != nil {
@@ -244,7 +277,7 @@ func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
 		go func() {
 			defer wg.Done()
 			for host := range work {
-				lvl := m.root.findLevelOrCreate(host[:], len(m.metrics))
+				lvl := m.root.findLevelOrCreate(host[:], len(m.Metrics))
 				nn, err := lvl.fromCheckpoint(filepath.Join(dir, host[0], host[1]), from, m)
 				if err != nil {
 					log.Fatalf("error while loading checkpoints: %s", err.Error())
@@ -302,7 +335,7 @@ done:
 	return int(n), nil
 }
 
-func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
+func (l *Level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 	for name, metric := range cf.Metrics {
 		n := len(metric.Data)
 		b := &buffer{
@@ -315,15 +348,15 @@ func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 		}
 		b.close()
 
-		minfo, ok := m.metrics[name]
+		minfo, ok := m.Metrics[name]
 		if !ok {
 			continue
 			// return errors.New("Unkown metric: " + name)
 		}
 
-		prev := l.metrics[minfo.offset]
+		prev := l.metrics[minfo.Offset]
 		if prev == nil {
-			l.metrics[minfo.offset] = b
+			l.metrics[minfo.Offset] = b
 		} else {
 			if prev.start > b.start {
 				return errors.New("wooops")
@@ -332,18 +365,18 @@ func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 			b.prev = prev
 			prev.next = b
 		}
-		l.metrics[minfo.offset] = b
+		l.metrics[minfo.Offset] = b
 	}
 
 	if len(cf.Children) > 0 && l.children == nil {
-		l.children = make(map[string]*level)
+		l.children = make(map[string]*Level)
 	}
 
 	for sel, childCf := range cf.Children {
 		child, ok := l.children[sel]
 		if !ok {
-			child = &level{
-				metrics:  make([]*buffer, len(m.metrics)),
+			child = &Level{
+				metrics:  make([]*buffer, len(m.Metrics)),
 				children: nil,
 			}
 			l.children[sel] = child
@@ -357,7 +390,7 @@ func (l *level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 	return nil
 }
 
-func (l *level) fromCheckpoint(dir string, from int64, m *MemoryStore) (int, error) {
+func (l *Level) fromCheckpoint(dir string, from int64, m *MemoryStore) (int, error) {
 	direntries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -371,9 +404,9 @@ func (l *level) fromCheckpoint(dir string, from int64, m *MemoryStore) (int, err
 	filesLoaded := 0
 	for _, e := range direntries {
 		if e.IsDir() {
-			child := &level{
-				metrics:  make([]*buffer, len(m.metrics)),
-				children: make(map[string]*level),
+			child := &Level{
+				metrics:  make([]*buffer, len(m.Metrics)),
+				children: make(map[string]*Level),
 			}
 
 			files, err := child.fromCheckpoint(path.Join(dir, e.Name()), from, m)
@@ -465,133 +498,4 @@ func findFiles(direntries []fs.DirEntry, t int64, findMoreRecentFiles bool) ([]s
 	}
 
 	return filenames, nil
-}
-
-// ZIP all checkpoint files older than `from` together and write them to the `archiveDir`,
-// deleting them from the `checkpointsDir`.
-func ArchiveCheckpoints(checkpointsDir, archiveDir string, from int64, deleteInstead bool) (int, error) {
-	entries1, err := os.ReadDir(checkpointsDir)
-	if err != nil {
-		return 0, err
-	}
-
-	type workItem struct {
-		cdir, adir    string
-		cluster, host string
-	}
-
-	var wg sync.WaitGroup
-	n, errs := int32(0), int32(0)
-	work := make(chan workItem, NumWorkers)
-
-	wg.Add(NumWorkers)
-	for worker := 0; worker < NumWorkers; worker++ {
-		go func() {
-			defer wg.Done()
-			for workItem := range work {
-				m, err := archiveCheckpoints(workItem.cdir, workItem.adir, from, deleteInstead)
-				if err != nil {
-					log.Printf("error while archiving %s/%s: %s", workItem.cluster, workItem.host, err.Error())
-					atomic.AddInt32(&errs, 1)
-				}
-				atomic.AddInt32(&n, int32(m))
-			}
-		}()
-	}
-
-	for _, de1 := range entries1 {
-		entries2, e := os.ReadDir(filepath.Join(checkpointsDir, de1.Name()))
-		if e != nil {
-			err = e
-		}
-
-		for _, de2 := range entries2 {
-			cdir := filepath.Join(checkpointsDir, de1.Name(), de2.Name())
-			adir := filepath.Join(archiveDir, de1.Name(), de2.Name())
-			work <- workItem{
-				adir: adir, cdir: cdir,
-				cluster: de1.Name(), host: de2.Name(),
-			}
-		}
-	}
-
-	close(work)
-	wg.Wait()
-
-	if err != nil {
-		return int(n), err
-	}
-
-	if errs > 0 {
-		return int(n), fmt.Errorf("%d errors happend while archiving (%d successes)", errs, n)
-	}
-	return int(n), nil
-}
-
-// Helper function for `ArchiveCheckpoints`.
-func archiveCheckpoints(dir string, archiveDir string, from int64, deleteInstead bool) (int, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return 0, err
-	}
-
-	files, err := findFiles(entries, from, false)
-	if err != nil {
-		return 0, err
-	}
-
-	if deleteInstead {
-		n := 0
-		for _, checkpoint := range files {
-			filename := filepath.Join(dir, checkpoint)
-			if err = os.Remove(filename); err != nil {
-				return n, err
-			}
-			n += 1
-		}
-		return n, nil
-	}
-
-	filename := filepath.Join(archiveDir, fmt.Sprintf("%d.zip", from))
-	f, err := os.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil && os.IsNotExist(err) {
-		err = os.MkdirAll(archiveDir, 0755)
-		if err == nil {
-			f, err = os.OpenFile(filename, os.O_CREATE|os.O_WRONLY, 0644)
-		}
-	}
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-	bw := bufio.NewWriter(f)
-	defer bw.Flush()
-	zw := zip.NewWriter(bw)
-	defer zw.Close()
-
-	n := 0
-	for _, checkpoint := range files {
-		filename := filepath.Join(dir, checkpoint)
-		r, err := os.Open(filename)
-		if err != nil {
-			return n, err
-		}
-		defer r.Close()
-
-		w, err := zw.Create(checkpoint)
-		if err != nil {
-			return n, err
-		}
-
-		if _, err = io.Copy(w, r); err != nil {
-			return n, err
-		}
-
-		if err = os.Remove(filename); err != nil {
-			return n, err
-		}
-		n += 1
-	}
-
-	return n, nil
 }
