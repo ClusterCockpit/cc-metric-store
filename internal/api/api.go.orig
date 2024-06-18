@@ -15,21 +15,35 @@ import (
 	"strings"
 	"time"
 
+<<<<<<< HEAD:internal/api/api.go
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/ClusterCockpit/cc-metric-store/internal/memorystore"
 	"github.com/ClusterCockpit/cc-metric-store/internal/util"
+=======
+	"github.com/golang-jwt/jwt/v5"
+>>>>>>> main:api.go
 	"github.com/gorilla/mux"
 	"github.com/influxdata/line-protocol/v2/lineprotocol"
 )
 
 type ApiMetricData struct {
-	Error *string    `json:"error,omitempty"`
+<<<<<<< HEAD:internal/api/api.go
+	Error *string         `json:"error,omitempty"`
 	Data  util.FloatArray `json:"data,omitempty"`
-	From  int64      `json:"from"`
-	To    int64      `json:"to"`
+	From  int64           `json:"from"`
+	To    int64           `json:"to"`
 	Avg   util.Float      `json:"avg"`
 	Min   util.Float      `json:"min"`
 	Max   util.Float      `json:"max"`
+=======
+	Error *string    `json:"error,omitempty"`
+	Data  FloatArray `json:"data,omitempty"`
+	From  int64      `json:"from"`
+	To    int64      `json:"to"`
+	Avg   Float      `json:"avg"`
+	Min   Float      `json:"min"`
+	Max   Float      `json:"max"`
+>>>>>>> main:api.go
 }
 
 // TODO: Optimize this, just like the stats endpoint!
@@ -178,20 +192,35 @@ type ApiQueryResponse struct {
 }
 
 type ApiQuery struct {
+<<<<<<< HEAD:internal/api/api.go
 	Type        *string    `json:"type,omitempty"`
 	SubType     *string    `json:"subtype,omitempty"`
+	Metric      string     `json:"metric"`
+	Hostname    string     `json:"host"`
+	TypeIds     []string   `json:"type-ids,omitempty"`
+	SubTypeIds  []string   `json:"subtype-ids,omitempty"`
+	ScaleFactor util.Float `json:"scale-by,omitempty"`
+	Aggregate   bool       `json:"aggreg"`
+=======
+	Type        *string  `json:"type,omitempty"`
+	SubType     *string  `json:"subtype,omitempty"`
 	Metric      string   `json:"metric"`
 	Hostname    string   `json:"host"`
 	TypeIds     []string `json:"type-ids,omitempty"`
 	SubTypeIds  []string `json:"subtype-ids,omitempty"`
-	ScaleFactor util.Float `json:"scale-by,omitempty"`
-	Aggregate   bool       `json:"aggreg"`
+	ScaleFactor Float    `json:"scale-by,omitempty"`
+	Aggregate   bool     `json:"aggreg"`
+>>>>>>> main:api.go
 }
 
 func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	var err error
 	req := ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true}
+<<<<<<< HEAD:internal/api/api.go
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+=======
+	if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
+>>>>>>> main:api.go
 		http.Error(rw, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -247,7 +276,11 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 			for _, typeId := range query.TypeIds {
 				if query.SubType != nil {
 					for _, subTypeId := range query.SubTypeIds {
+<<<<<<< HEAD:internal/api/api.go
 						sels = append(sels, util.Selector{
+=======
+						sels = append(sels, Selector{
+>>>>>>> main:api.go
 							{String: req.Cluster},
 							{String: query.Hostname},
 							{String: *query.Type + typeId},
@@ -310,13 +343,66 @@ func handleDebug(rw http.ResponseWriter, r *http.Request) {
 	selector := []string{}
 	if len(raw) != 0 {
 		selector = strings.Split(raw, ":")
-		}
+	}
 
+<<<<<<< HEAD:internal/api/api.go
 	ms := memorystore.GetMemoryStore()
 	if err := ms.DebugDump(bufio.NewWriter(rw), selector); err != nil {
 		rw.WriteHeader(http.StatusBadRequest)
 		rw.Write([]byte(err.Error()))
+	}
+=======
+	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		authheader := r.Header.Get("Authorization")
+		if authheader == "" || !strings.HasPrefix(authheader, "Bearer ") {
+			http.Error(rw, "Use JWT Authentication", http.StatusUnauthorized)
+			return
 		}
+
+		rawtoken := authheader[len("Bearer "):]
+		cacheLock.RLock()
+		token, ok := cache[rawtoken]
+		if ok && token.Valid {
+			cacheLock.RUnlock()
+			next.ServeHTTP(rw, r)
+			return
+
+		}
+		// The actual token is ignored for now.
+		// In case expiration and so on are specified, the Parse function
+		// already returns an error for expired tokens.
+		var err error
+		token, err = jwt.Parse(rawtoken, func(t *jwt.Token) (interface{}, error) {
+			if t.Method != jwt.SigningMethodEdDSA {
+				return nil, errors.New("only Ed25519/EdDSA supported")
+			}
+
+			return publicKey, nil
+		})
+
+		switch {
+		case token.Valid:
+			cacheLock.Lock()
+			cache[rawtoken] = token
+			cacheLock.Unlock()
+		case errors.Is(err, jwt.ErrTokenMalformed):
+			log.Print("That is not a token")
+		case errors.Is(err, jwt.ErrTokenSignatureInvalid):
+			log.Print("Invalid signature")
+		case errors.Is(err, jwt.ErrTokenExpired) || errors.Is(err, jwt.ErrTokenNotValidYet):
+			log.Print("Token is either expired or not active yet")
+		default:
+			log.Print("Couldn't handle this token:", err)
+		}
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusUnauthorized)
+			return
+		}
+
+		// Let request through...
+		next.ServeHTTP(rw, r)
+	})
+>>>>>>> main:api.go
 }
 
 func StartApiServer(ctx context.Context, httpConfig *config.HttpConfig) error {

@@ -9,7 +9,7 @@ LD_FLAGS = '-s -X main.date=${CURRENT_TIME} -X main.version=${VERSION} -X main.c
 .NOTPARALLEL:
 
 $(TARGET):
-	$(info ===>  BUILD cc-backend)
+	$(info ===>  BUILD cc-metric-store)
 	@go build -ldflags=${LD_FLAGS} ./cmd/cc-metric-store
 
 clean:
