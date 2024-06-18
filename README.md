@@ -2,18 +2,29 @@
 
 [![Build & Test](https://github.com/ClusterCockpit/cc-metric-store/actions/workflows/test.yml/badge.svg)](https://github.com/ClusterCockpit/cc-metric-store/actions/workflows/test.yml)
 
-The cc-metric-store provides a simple in-memory time series database for storing metrics of cluster nodes at preconfigured intervals. It is meant to be used as part of the [ClusterCockpit suite](https://github.com/ClusterCockpit). As all data is kept in-memory (but written to disk as compressed JSON for long term storage), accessing it is very fast. It also provides aggregations over time *and* nodes/sockets/cpus.
+The cc-metric-store provides a simple in-memory time series database for storing
+metrics of cluster nodes at preconfigured intervals. It is meant to be used as
+part of the [ClusterCockpit suite](https://github.com/ClusterCockpit). As all
+data is kept in-memory (but written to disk as compressed JSON for long term
+storage), accessing it is very fast. It also provides aggregations over time
+_and_ nodes/sockets/cpus.
 
-There are major limitations: Data only gets written to disk at periodic checkpoints, not as soon as it is received.
+There are major limitations: Data only gets written to disk at periodic
+checkpoints, not as soon as it is received.
 
-Go look at the `TODO.md` file and the [GitHub Issues](https://github.com/ClusterCockpit/cc-metric-store/issues) for a progress overview. Things work, but are not properly tested.
-The [NATS.io](https://nats.io/) based writing endpoint consumes messages in [this format of the InfluxDB line protocol](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md).
+Go look at the `TODO.md` file and the [GitHub
+Issues](https://github.com/ClusterCockpit/cc-metric-store/issues) for a progress
+overview. Things work, but are not properly tested. The
+[NATS.io](https://nats.io/) based writing endpoint consumes messages in [this
+format of the InfluxDB line
+protocol](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md).
 
-### REST API Endpoints
+## REST API Endpoints
 
-The REST API is documented in [openapi.yaml](./openapi.yaml) in the OpenAPI 3.0 format.
+The REST API is documented in [openapi.yaml](./api/openapi.yaml) in the OpenAPI
+3.0 format.
 
-### Run tests
+## Run tests
 
 Some benchmarks concurrently access the `MemoryStore`, so enabling the
 [Race Detector](https://golang.org/doc/articles/race_detector) might be useful.
@@ -28,18 +39,21 @@ go test -v ./...
 go test -bench=. -race -v ./...
 ```
 
-### What are these selectors mentioned in the code?
+## What are these selectors mentioned in the code?
 
-Tags in InfluxDB are used to build indexes over the stored data. InfluxDB-Tags have no
-relation to each other, they do not depend on each other and have no hierarchy.
-Different tags build up different indexes (I am no expert at all, but this is how i think they work).
+Tags in InfluxDB are used to build indexes over the stored data. InfluxDB-Tags
+have no relation to each other, they do not depend on each other and have no
+hierarchy. Different tags build up different indexes (I am no expert at all, but
+this is how i think they work).
 
-This project also works as a time-series database and uses the InfluxDB line protocol.
-Unlike InfluxDB, the data is indexed by one single strictly hierarchical tree structure.
-A selector is build out of the tags in the InfluxDB line protocol, and can be used to select
-a node (not in the sense of a compute node, can also be a socket, cpu, ...) in that tree.
-The implementation calls those nodes `level` to avoid confusion.
-It is impossible to access data only by knowing the *socket* or *cpu* tag, all higher up levels have to be specified as well.
+This project also works as a time-series database and uses the InfluxDB line
+protocol. Unlike InfluxDB, the data is indexed by one single strictly
+hierarchical tree structure. A selector is build out of the tags in the InfluxDB
+line protocol, and can be used to select a node (not in the sense of a compute
+node, can also be a socket, cpu, ...) in that tree. The implementation calls
+those nodes `level` to avoid confusion. It is impossible to access data only by
+knowing the _socket_ or _cpu_ tag, all higher up levels have to be specified as
+well.
 
 This is what the hierarchy currently looks like:
 
@@ -59,43 +73,49 @@ This is what the hierarchy currently looks like:
 - ...
 
 Example selectors:
+
 1. `["cluster1", "host1", "cpu0"]`: Select only the cpu0 of host1 in cluster1
 2. `["cluster1", "host1", ["cpu4", "cpu5", "cpu6", "cpu7"]]`: Select only CPUs 4-7 of host1 in cluster1
 3. `["cluster1", "host1"]`: Select the complete node. If querying for a CPU-specific metric such as floats, all CPUs are implied
 
-### Config file
+## Config file
 
-All durations are specified as string that will be parsed [like this](https://pkg.go.dev/time#ParseDuration) (Allowed suffixes: `s`, `m`, `h`, ...).
+All durations are specified as string that will be parsed [like
+this](https://pkg.go.dev/time#ParseDuration) (Allowed suffixes: `s`, `m`, `h`,
+...).
 
 - `metrics`: Map of metric-name to objects with the following properties
-    - `frequency`: Timestep/Interval/Resolution of this metric
-    - `aggregation`: Can be `"sum"`, `"avg"` or `null`
-        - `null` means aggregation across nodes is forbidden for this metric
-        - `"sum"` means that values from the child levels are summed up for the parent level
-        - `"avg"` means that values from the child levels are averaged for the parent level
-    - `scope`: Unused at the moment, should be something like `"node"`, `"socket"` or `"hwthread"`
+  - `frequency`: Timestep/Interval/Resolution of this metric
+  - `aggregation`: Can be `"sum"`, `"avg"` or `null`
+    - `null` means aggregation across nodes is forbidden for this metric
+    - `"sum"` means that values from the child levels are summed up for the parent level
+    - `"avg"` means that values from the child levels are averaged for the parent level
+  - `scope`: Unused at the moment, should be something like `"node"`, `"socket"` or `"hwthread"`
 - `nats`:
-    - `address`: Url of NATS.io server, example: "nats://localhost:4222"
-    - `username` and `password`: Optional, if provided use those for the connection
-    - `subscriptions`:
-        - `subscribe-to`: Where to expect the measurements to be published
-        - `cluster-tag`: Default value for the cluster tag
+  - `address`: Url of NATS.io server, example: "nats://localhost:4222"
+  - `username` and `password`: Optional, if provided use those for the connection
+  - `subscriptions`:
+    - `subscribe-to`: Where to expect the measurements to be published
+    - `cluster-tag`: Default value for the cluster tag
 - `http-api`:
-    - `address`: Address to bind to, for example `0.0.0.0:8080`
-    - `https-cert-file` and `https-key-file`: Optional, if provided enable HTTPS using those files as certificate/key
+  - `address`: Address to bind to, for example `0.0.0.0:8080`
+  - `https-cert-file` and `https-key-file`: Optional, if provided enable HTTPS using those files as certificate/key
 - `jwt-public-key`: Base64 encoded string, use this to verify requests to the HTTP API
 - `retention-on-memory`: Keep all values in memory for at least that amount of time
 - `checkpoints`:
-    - `interval`: Do checkpoints every X seconds/minutes/hours
-    - `directory`: Path to a directory
-    - `restore`: After a restart, load the last X seconds/minutes/hours of data back into memory
+  - `interval`: Do checkpoints every X seconds/minutes/hours
+  - `directory`: Path to a directory
+  - `restore`: After a restart, load the last X seconds/minutes/hours of data back into memory
 - `archive`:
-    - `interval`: Move and compress all checkpoints not needed anymore every X seconds/minutes/hours
-    - `directory`: Path to a directory
+  - `interval`: Move and compress all checkpoints not needed anymore every X seconds/minutes/hours
+  - `directory`: Path to a directory
 
-### Test the complete setup (excluding ClusterCockpit itself)
+## Test the complete setup (excluding cc-backend itself)
 
-There are two ways for sending data to the cc-metric-store, both of which are supported by the [cc-metric-collector](https://github.com/ClusterCockpit/cc-metric-collector). This example uses Nats, the alternative is to use HTTP.
+There are two ways for sending data to the cc-metric-store, both of which are
+supported by the
+[cc-metric-collector](https://github.com/ClusterCockpit/cc-metric-collector).
+This example uses Nats, the alternative is to use HTTP.
 
 ```sh
 # Only needed once, downloads the docker image
@@ -105,7 +125,9 @@ docker pull nats:latest
 docker run -p 4222:4222 -ti nats:latest
 ```
 
-Second, build and start the [cc-metric-collector](https://github.com/ClusterCockpit/cc-metric-collector) using the following as Sink-Config:
+Second, build and start the
+[cc-metric-collector](https://github.com/ClusterCockpit/cc-metric-collector)
+using the following as Sink-Config:
 
 ```json
 {
@@ -116,18 +138,20 @@ Second, build and start the [cc-metric-collector](https://github.com/ClusterCock
 }
 ```
 
-Third, build and start the metric store. For this example here, the `config.json` file
-already in the repository should work just fine.
+Third, build and start the metric store. For this example here, the
+`config.json` file already in the repository should work just fine.
 
 ```sh
 # Assuming you have a clone of this repo in ./cc-metric-store:
 cd cc-metric-store
-go get
-go build
+make
 ./cc-metric-store
 ```
 
-And finally, use the API to fetch some data. The API is protected by JWT based authentication if `jwt-public-key` is set in `config.json`. You can use this JWT for testing: `eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSJ9.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlcyI6WyJST0xFX0FETUlOIiwiUk9MRV9BTkFMWVNUIiwiUk9MRV9VU0VSIl19.d-3_3FZTsadPjDEdsWrrQ7nS0edMAR4zjl-eK7rJU3HziNBfI9PDHDIpJVHTNN5E5SlLGLFXctWyKAkwhXL-Dw`
+And finally, use the API to fetch some data. The API is protected by JWT based
+authentication if `jwt-public-key` is set in `config.json`. You can use this JWT
+for testing:
+`eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSJ9.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlcyI6WyJST0xFX0FETUlOIiwiUk9MRV9BTkFMWVNUIiwiUk9MRV9VU0VSIl19.d-3_3FZTsadPjDEdsWrrQ7nS0edMAR4zjl-eK7rJU3HziNBfI9PDHDIpJVHTNN5E5SlLGLFXctWyKAkwhXL-Dw`
 
 ```sh
 JWT="eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSJ9.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlcyI6WyJST0xFX0FETUlOIiwiUk9MRV9BTkFMWVNUIiwiUk9MRV9VU0VSIl19.d-3_3FZTsadPjDEdsWrrQ7nS0edMAR4zjl-eK7rJU3HziNBfI9PDHDIpJVHTNN5E5SlLGLFXctWyKAkwhXL-Dw"
@@ -142,6 +166,7 @@ curl -H "Authorization: Bearer $JWT" -D - "http://localhost:8080/api/query" -d "
 ```
 
 For debugging there is a debug endpoint to dump the current content to stdout:
+
 ```sh
 JWT="eyJ0eXAiOiJKV1QiLCJhbGciOiJFZERTQSJ9.eyJ1c2VyIjoiYWRtaW4iLCJyb2xlcyI6WyJST0xFX0FETUlOIiwiUk9MRV9BTkFMWVNUIiwiUk9MRV9VU0VSIl19.d-3_3FZTsadPjDEdsWrrQ7nS0edMAR4zjl-eK7rJU3HziNBfI9PDHDIpJVHTNN5E5SlLGLFXctWyKAkwhXL-Dw"
 
