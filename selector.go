@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"log"
 )
 
 type SelectorElement struct {
@@ -70,54 +71,85 @@ func (l *level) findBuffers(selector Selector, offset int, f func(b *buffer) err
 	l.lock.RLock()
 	defer l.lock.RUnlock()
 
+	log.Printf(">>>> HELLO FINDBUFFERS <<<<")
+	log.Printf(">>>> FINDBUFFERS : FOR SELECTOR >>>> %v", selector)
+	// log.Printf(">>>> FINDBUFFERS : FOR OFFSET   >>>> %d", offset)
+
 	if len(selector) == 0 {
 		b := l.metrics[offset]
 		if b != nil {
+			log.Printf(">>>> FINDBUFFERS : SELECTOR ARRAY EMPTY      >>>> FOUND BUFFER AT METRICS OFFSET %d", offset)
+			log.Printf(">>>> FINDBUFFERS : END RECURSIVE FINDBUFFERS >>>> RETURN BUFFER")
 			return f(b)
 		}
 
 		for _, lvl := range l.children {
+			log.Printf(">>>> FINDBUFFERS : SELECTOR ARRAY EMPTY >>>> ITERATING LEVEL >>>> %v", lvl)
 			err := lvl.findBuffers(nil, offset, f)
 			if err != nil {
 				return err
 			}
 		}
+
+		log.Printf(">>>> FINDBUFFERS : SELECTOR ARRAY EMPTY      >>>> NO BUFFER MATCHED")
+		log.Printf(">>>> FINDBUFFERS : END RECURSIVE FINDBUFFERS >>>> RETURN NIL")
 		return nil
 	}
 
 	sel := selector[0]
+
+	log.Printf(">>>> FINDBUFFERS : LEVEL CHILDREN >>>> NOT NIL : %v", (l.children != nil))
+	// log.Printf(">>>> FINDBUFFERS : SELECTOR ELEMENT @ INDEX 0 >>>> %v", sel)
+
+	log.Printf(">>>> FINDBUFFERS : SELECTOR ELEMENT >>>> STRING : %s", sel.String)
 	if len(sel.String) != 0 && l.children != nil {
+		// log.Printf(">>>> FINDBUFFERS : NAMED SELECTOR && CHILDREN AVAILABLE")
 		lvl, ok := l.children[sel.String]
 		if ok {
+			log.Printf(">>>> FINDBUFFERS : NAMED >>>> LOOKUP CHILDREN")
+			log.Printf(">>>> FINDBUFFERS : NAMED >>>> DO RECURSIVE FINDBUFFERS")
 			err := lvl.findBuffers(selector[1:], offset, f)
 			if err != nil {
+				log.Printf(">>>> FINDBUFFERS : NAMED >>>> RECURSIVE ERROR >>>> $s", err)
 				return err
 			}
 		}
 		return nil
 	}
 
+	log.Printf(">>>> FINDBUFFERS : SELECTOR ELEMENT >>>> GROUP : %v", sel.Group)
 	if sel.Group != nil && l.children != nil {
+		// log.Printf(">>>> FINDBUFFERS : GROUP && CHILDREN AVAILABLE")
 		for _, key := range sel.Group {
 			lvl, ok := l.children[key]
 			if ok {
+				log.Printf(">>>> FINDBUFFERS : GROUP >>>> LOOKUP CHILDREN FOR GROUPKEY >>>> %s", key)
+				log.Printf(">>>> FINDBUFFERS : GROUP >>>> DO RECURSIVE FINDBUFFERS")
 				err := lvl.findBuffers(selector[1:], offset, f)
 				if err != nil {
+					log.Printf(">>>> FINDBUFFERS : GROUP >>>> RECURSIVE ERROR >>>> $s", err)
 					return err
 				}
 			}
 		}
+		log.Printf(">>>> FINDBUFFERS : GROUP >>>> RETURN NIL")
 		return nil
 	}
 
+	log.Printf(">>>> FINDBUFFERS : SELECTOR ELEMENT >>>> IS ANY : %v", sel.Any)
 	if sel.Any && l.children != nil {
+		// log.Printf(">>>> FINDBUFFERS : ENABLED ANY && CHILDREN AVAILABLE")
 		for _, lvl := range l.children {
+			log.Printf(">>>> FINDBUFFERS : ANY >>>> DO RECURSIVE FINDBUFFERS")
 			if err := lvl.findBuffers(selector[1:], offset, f); err != nil {
+				log.Printf(">>>> FINDBUFFERS : ANY >>>> RECURSIVE ERROR >>>> $s", err)
 				return err
 			}
 		}
+		log.Printf(">>>> FINDBUFFERS : ANY >>>> RETURN NIL")
 		return nil
 	}
 
+	log.Printf(">>>> FINDBUFFERS : NO MATCHED CASE >>>> RETURN NIL")
 	return nil
 }
