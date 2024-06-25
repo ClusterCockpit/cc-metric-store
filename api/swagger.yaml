@@ -1,0 +1,253 @@
+basePath: /api/
+definitions:
+  api.ApiMetricData:
+    properties:
+      avg:
+        type: number
+      data:
+        items:
+          type: number
+        type: array
+      error:
+        type: string
+      from:
+        type: integer
+      max:
+        type: number
+      min:
+        type: number
+      to:
+        type: integer
+    type: object
+  api.ApiQuery:
+    properties:
+      aggreg:
+        type: boolean
+      host:
+        type: string
+      metric:
+        type: string
+      scale-by:
+        type: number
+      subtype:
+        type: string
+      subtype-ids:
+        items:
+          type: string
+        type: array
+      type:
+        type: string
+      type-ids:
+        items:
+          type: string
+        type: array
+    type: object
+  api.ApiQueryRequest:
+    properties:
+      cluster:
+        type: string
+      for-all-nodes:
+        items:
+          type: string
+        type: array
+      from:
+        type: integer
+      queries:
+        items:
+          $ref: '#/definitions/api.ApiQuery'
+        type: array
+      to:
+        type: integer
+      with-data:
+        type: boolean
+      with-padding:
+        type: boolean
+      with-stats:
+        type: boolean
+    type: object
+  api.ApiQueryResponse:
+    properties:
+      queries:
+        items:
+          $ref: '#/definitions/api.ApiQuery'
+        type: array
+      results:
+        items:
+          items:
+            $ref: '#/definitions/api.ApiMetricData'
+          type: array
+        type: array
+    type: object
+  api.ErrorResponse:
+    properties:
+      error:
+        description: Error Message
+        type: string
+      status:
+        description: Statustext of Errorcode
+        type: string
+    type: object
+host: localhost:8082
+info:
+  contact:
+    email: support@clustercockpit.org
+    name: ClusterCockpit Project
+    url: https://clustercockpit.org
+  description: API for cc-metric-store
+  license:
+    name: MIT License
+    url: https://opensource.org/licenses/MIT
+  title: cc-metric-store REST API
+  version: 1.0.0
+paths:
+  /clusters/:
+    get:
+      parameters:
+      - description: up to timestamp
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ok
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      tags:
+      - free
+  /debug/:
+    post:
+      description: Write metrics to store
+      parameters:
+      - description: Job Cluster
+        in: query
+        name: selector
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Debug dump
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Debug endpoint
+      tags:
+      - write
+  /query/:
+    get:
+      consumes:
+      - application/json
+      description: Query metrics.
+      parameters:
+      - description: API query payload object
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/api.ApiQueryRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: API query response object
+          schema:
+            $ref: '#/definitions/api.ApiQueryResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Query metrics
+      tags:
+      - query
+  /write/:
+    post:
+      consumes:
+      - text/plain
+      parameters:
+      - description: If the lines in the body do not have a cluster tag, use this
+          value instead.
+        in: query
+        name: cluster
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: ok
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: X-Auth-Token
+    type: apiKey
+swagger: "2.0"
