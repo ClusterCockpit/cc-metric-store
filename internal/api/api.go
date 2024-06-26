@@ -137,10 +137,6 @@ func (data *ApiMetricData) PadDataWithNull(ms *memorystore.MemoryStore, from, to
 // @security    ApiKeyAuth
 // @router      /free/ [get]
 func handleFree(rw http.ResponseWriter, r *http.Request) {
-	if err := isAuthenticated(r); err != nil {
-		handleError(err, http.StatusUnauthorized, rw)
-		return
-	}
 	rawTo := r.URL.Query().Get("to")
 	if rawTo == "" {
 		handleError(errors.New("'to' is a required query parameter"), http.StatusBadRequest, rw)
@@ -200,10 +196,6 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 // @security    ApiKeyAuth
 // @router      /write/ [post]
 func handleWrite(rw http.ResponseWriter, r *http.Request) {
-	if err := isAuthenticated(r); err != nil {
-		handleError(err, http.StatusUnauthorized, rw)
-		return
-	}
 	bytes, err := io.ReadAll(r.Body)
 	rw.Header().Add("Content-Type", "application/json")
 	if err != nil {
@@ -263,10 +255,6 @@ type ApiQuery struct {
 // @security    ApiKeyAuth
 // @router      /query/ [get]
 func handleQuery(rw http.ResponseWriter, r *http.Request) {
-	if err := isAuthenticated(r); err != nil {
-		handleError(err, http.StatusUnauthorized, rw)
-		return
-	}
 	var err error
 	req := ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -385,10 +373,10 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 
 // handleDebug godoc
 // @summary Debug endpoint
-// @tags write
+// @tags debug
 // @description Write metrics to store
 // @produce     json
-// @param       selector        query    string            false "Job Cluster"
+// @param       selector        query    string            false "Selector"
 // @success     200            {string} string  "Debug dump"
 // @failure     400            {object} api.ErrorResponse       "Bad Request"
 // @failure     401            {object} api.ErrorResponse       "Unauthorized"
@@ -397,10 +385,6 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 // @security    ApiKeyAuth
 // @router      /debug/ [post]
 func handleDebug(rw http.ResponseWriter, r *http.Request) {
-	if err := isAuthenticated(r); err != nil {
-		handleError(err, http.StatusUnauthorized, rw)
-		return
-	}
 	raw := r.URL.Query().Get("selector")
 	rw.Header().Add("Content-Type", "application/json")
 	selector := []string{}

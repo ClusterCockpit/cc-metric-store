@@ -10,43 +10,47 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
-var publicKey ed25519.PublicKey
-
-func isAuthenticated(r *http.Request) error {
+func authHandler(next http.Handler, publicKey ed25519.PublicKey) http.Handler {
 	cacheLock := sync.RWMutex{}
 	cache := map[string]*jwt.Token{}
 
-	authheader := r.Header.Get("Authorization")
-	if authheader == "" || !strings.HasPrefix(authheader, "Bearer ") {
-		return errors.New("Use JWT Authentication")
-	}
-
-	rawtoken := authheader[len("Bearer "):]
-	cacheLock.RLock()
-	token, ok := cache[rawtoken]
-	cacheLock.RUnlock()
-	if ok && token.Claims.Valid() == nil {
-		return nil
-	}
-
-	// The actual token is ignored for now.
-	// In case expiration and so on are specified, the Parse function
-	// already returns an error for expired tokens.
-	var err error
-	token, err = jwt.Parse(rawtoken, func(t *jwt.Token) (interface{}, error) {
-		if t.Method != jwt.SigningMethodEdDSA {
-			return nil, errors.New("only Ed25519/EdDSA supported")
+	return http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		authheader := r.Header.Get("Authorization")
+		if authheader == "" || !strings.HasPrefix(authheader, "Bearer ") {
+			http.Error(rw, "Use JWT Authentication", http.StatusUnauthorized)
+			return
 		}
 
-		return publicKey, nil
+		rawtoken := authheader[len("Bearer "):]
+		cacheLock.RLock()
+		token, ok := cache[rawtoken]
+		cacheLock.RUnlock()
+		if ok && token.Claims.Valid() == nil {
+			next.ServeHTTP(rw, r)
+			return
+		}
+
+		// The actual token is ignored for now.
+		// In case expiration and so on are specified, the Parse function
+		// already returns an error for expired tokens.
+		var err error
+		token, err = jwt.Parse(rawtoken, func(t *jwt.Token) (interface{}, error) {
+			if t.Method != jwt.SigningMethodEdDSA {
+				return nil, errors.New("only Ed25519/EdDSA supported")
+			}
+
+			return publicKey, nil
+		})
+		if err != nil {
+			http.Error(rw, err.Error(), http.StatusUnauthorized)
+			return
+		}
+
+		cacheLock.Lock()
+		cache[rawtoken] = token
+		cacheLock.Unlock()
+
+		// Let request through...
+		next.ServeHTTP(rw, r)
 	})
-	if err != nil {
-		return err
-	}
-
-	cacheLock.Lock()
-	cache[rawtoken] = token
-	cacheLock.Unlock()
-
-	return nil
 }

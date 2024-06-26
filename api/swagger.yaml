@@ -100,7 +100,43 @@ info:
   title: cc-metric-store REST API
   version: 1.0.0
 paths:
-  /clusters/:
+  /debug/:
+    post:
+      description: Write metrics to store
+      parameters:
+      - description: Selector
+        in: query
+        name: selector
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Debug dump
+          schema:
+            type: string
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.ErrorResponse'
+      security:
+      - ApiKeyAuth: []
+      summary: Debug endpoint
+      tags:
+      - debug
+  /free/:
     get:
       parameters:
       - description: up to timestamp
@@ -134,42 +170,6 @@ paths:
       - ApiKeyAuth: []
       tags:
       - free
-  /debug/:
-    post:
-      description: Write metrics to store
-      parameters:
-      - description: Job Cluster
-        in: query
-        name: selector
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Debug dump
-          schema:
-            type: string
-        "400":
-          description: Bad Request
-          schema:
-            $ref: '#/definitions/api.ErrorResponse'
-        "401":
-          description: Unauthorized
-          schema:
-            $ref: '#/definitions/api.ErrorResponse'
-        "403":
-          description: Forbidden
-          schema:
-            $ref: '#/definitions/api.ErrorResponse'
-        "500":
-          description: Internal Server Error
-          schema:
-            $ref: '#/definitions/api.ErrorResponse'
-      security:
-      - ApiKeyAuth: []
-      summary: Debug endpoint
-      tags:
-      - write
   /query/:
     get:
       consumes:

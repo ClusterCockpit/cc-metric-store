@@ -23,30 +23,32 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/clusters/": {
-            "get": {
+        "/debug/": {
+            "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
+                "description": "Write metrics to store",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "free"
+                    "debug"
                 ],
+                "summary": "Debug endpoint",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "up to timestamp",
-                        "name": "to",
+                        "description": "Selector",
+                        "name": "selector",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "ok",
+                        "description": "Debug dump",
                         "schema": {
                             "type": "string"
                         }
@@ -78,32 +80,30 @@ const docTemplate = `{
                 }
             }
         },
-        "/debug/": {
-            "post": {
+        "/free/": {
+            "get": {
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Write metrics to store",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "write"
+                    "free"
                 ],
-                "summary": "Debug endpoint",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Job Cluster",
-                        "name": "selector",
+                        "description": "up to timestamp",
+                        "name": "to",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Debug dump",
+                        "description": "ok",
                         "schema": {
                             "type": "string"
                         }
