@@ -1,11 +1,17 @@
+// Copyright (C) NHR@FAU, University Erlangen-Nuremberg.
+// All rights reserved.
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file.
 package main
 
 import (
-	"bufio"
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"runtime"
@@ -17,7 +23,9 @@ import (
 	"github.com/ClusterCockpit/cc-metric-store/internal/api"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/ClusterCockpit/cc-metric-store/internal/memorystore"
+	"github.com/ClusterCockpit/cc-metric-store/internal/runtimeEnv"
 	"github.com/google/gops/agent"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 var (
@@ -28,9 +36,10 @@ var (
 
 func main() {
 	var configFile string
-	var enableGopsAgent, flagVersion bool
+	var enableGopsAgent, flagVersion, flagDev bool
 	flag.StringVar(&configFile, "config", "./config.json", "configuration file")
 	flag.BoolVar(&enableGopsAgent, "gops", false, "Listen via github.com/google/gops/agent")
+	flag.BoolVar(&flagDev, "dev", false, "Enable development Swagger UI component")
 	flag.BoolVar(&flagVersion, "version", false, "Show version information and exit")
 	flag.Parse()
 
@@ -81,35 +90,71 @@ func main() {
 	ctx, shutdown := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
-	go func() {
-		for {
-			sig := <-sigs
-			if sig == syscall.SIGUSR1 {
-				ms.DebugDump(bufio.NewWriter(os.Stdout), nil)
-				continue
-			}
-
-			log.Println("Shutting down...")
-			shutdown()
-		}
-	}()
-
 	wg.Add(3)
 
 	memorystore.Retention(&wg, ctx)
 	memorystore.Checkpointing(&wg, ctx)
 	memorystore.Archiving(&wg, ctx)
 
-	wg.Add(1)
+	r := http.NewServeMux()
+	api.MountRoutes(r)
 
-	go func() {
-		err := api.StartApiServer(ctx, config.Keys.HttpConfig)
+	if flagDev {
+		log.Print("Enable Swagger UI!")
+		r.HandleFunc("GET /swagger/", httpSwagger.Handler(
+			httpSwagger.URL("http://"+config.Keys.HttpConfig.Address+"/swagger/doc.json")))
+	}
+
+	server := &http.Server{
+		Handler:      r,
+		Addr:         config.Keys.HttpConfig.Address,
+		WriteTimeout: 30 * time.Second,
+		ReadTimeout:  30 * time.Second,
+	}
+
+	// Start http or https server
+	listener, err := net.Listen("tcp", config.Keys.HttpConfig.Address)
+	if err != nil {
+		log.Fatalf("starting http listener failed: %v", err)
+	}
+
+	if config.Keys.HttpConfig.CertFile != "" && config.Keys.HttpConfig.KeyFile != "" {
+		cert, err := tls.LoadX509KeyPair(config.Keys.HttpConfig.CertFile, config.Keys.HttpConfig.KeyFile)
 		if err != nil {
-			log.Fatal(err)
+			log.Fatalf("loading X509 keypair failed: %v", err)
 		}
-		wg.Done()
+		listener = tls.NewListener(listener, &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			CipherSuites: []uint16{
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			},
+			MinVersion:               tls.VersionTLS12,
+			PreferServerCipherSuites: true,
+		})
+		fmt.Printf("HTTPS server listening at %s...", config.Keys.HttpConfig.Address)
+	} else {
+		fmt.Printf("HTTP server listening at %s...", config.Keys.HttpConfig.Address)
+	}
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err = server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("starting server failed: %v", err)
+		}
+	}()
+
+	wg.Add(1)
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		defer wg.Done()
+		<-sigs
+		runtimeEnv.SystemdNotifiy(false, "Shutting down ...")
+		server.Shutdown(context.Background())
+		shutdown()
+		memorystore.Shutdown()
 	}()
 
 	if config.Keys.Nats != nil {
@@ -128,6 +173,7 @@ func main() {
 		}
 	}
 
+	runtimeEnv.SystemdNotifiy(true, "running")
 	wg.Wait()
-	memorystore.Shutdown()
+	log.Print("Graceful shutdown completed!")
 }

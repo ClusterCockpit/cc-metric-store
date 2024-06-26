@@ -1,11 +1,13 @@
+// Copyright (C) NHR@FAU, University Erlangen-Nuremberg.
+// All rights reserved.
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file.
 package api
 
 import (
 	"bufio"
-	"context"
-	"crypto/ed25519"
-	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,23 +15,55 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/ClusterCockpit/cc-metric-store/internal/memorystore"
 	"github.com/ClusterCockpit/cc-metric-store/internal/util"
-	"github.com/gorilla/mux"
 	"github.com/influxdata/line-protocol/v2/lineprotocol"
 )
 
+// @title                      cc-metric-store REST API
+// @version                    1.0.0
+// @description                API for cc-metric-store
+
+// @contact.name               ClusterCockpit Project
+// @contact.url                https://clustercockpit.org
+// @contact.email              support@clustercockpit.org
+
+// @license.name               MIT License
+// @license.url                https://opensource.org/licenses/MIT
+
+// @host                       localhost:8082
+// @basePath                   /api/
+
+// @securityDefinitions.apikey ApiKeyAuth
+// @in                         header
+// @name                       X-Auth-Token
+
+// ErrorResponse model
+type ErrorResponse struct {
+	// Statustext of Errorcode
+	Status string `json:"status"`
+	Error  string `json:"error"` // Error Message
+}
+
 type ApiMetricData struct {
-	Error *string    `json:"error,omitempty"`
+	Error *string         `json:"error,omitempty"`
 	Data  util.FloatArray `json:"data,omitempty"`
-	From  int64      `json:"from"`
-	To    int64      `json:"to"`
+	From  int64           `json:"from"`
+	To    int64           `json:"to"`
 	Avg   util.Float      `json:"avg"`
 	Min   util.Float      `json:"min"`
 	Max   util.Float      `json:"max"`
+}
+
+func handleError(err error, statusCode int, rw http.ResponseWriter) {
+	// log.Warnf("REST ERROR : %s", err.Error())
+	rw.Header().Add("Content-Type", "application/json")
+	rw.WriteHeader(statusCode)
+	json.NewEncoder(rw).Encode(ErrorResponse{
+		Status: http.StatusText(statusCode),
+		Error:  err.Error(),
+	})
 }
 
 // TODO: Optimize this, just like the stats endpoint!
@@ -89,16 +123,29 @@ func (data *ApiMetricData) PadDataWithNull(ms *memorystore.MemoryStore, from, to
 	}
 }
 
+// handleFree godoc
+// @summary
+// @tags free
+// @description
+// @produce     json
+// @param       to        query    string        false  "up to timestamp"
+// @success     200            {string} string  "ok"
+// @failure     400            {object} api.ErrorResponse       "Bad Request"
+// @failure     401            {object} api.ErrorResponse       "Unauthorized"
+// @failure     403            {object} api.ErrorResponse       "Forbidden"
+// @failure     500            {object} api.ErrorResponse       "Internal Server Error"
+// @security    ApiKeyAuth
+// @router      /free/ [get]
 func handleFree(rw http.ResponseWriter, r *http.Request) {
 	rawTo := r.URL.Query().Get("to")
 	if rawTo == "" {
-		http.Error(rw, "'to' is a required query parameter", http.StatusBadRequest)
+		handleError(errors.New("'to' is a required query parameter"), http.StatusBadRequest, rw)
 		return
 	}
 
 	to, err := strconv.ParseInt(rawTo, 10, 64)
 	if err != nil {
-		http.Error(rw, err.Error(), http.StatusBadRequest)
+		handleError(err, http.StatusInternalServerError, rw)
 		return
 	}
 
@@ -108,11 +155,6 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 	// if to < freeUpTo {
 	// 	freeUpTo = to
 	// }
-
-	if r.Method != http.MethodPost {
-		http.Error(rw, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
 
 	bodyDec := json.NewDecoder(r.Body)
 	var selectors [][]string
@@ -127,7 +169,7 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 	for _, sel := range selectors {
 		bn, err := ms.Free(sel, to)
 		if err != nil {
-			http.Error(rw, err.Error(), http.StatusInternalServerError)
+			handleError(err, http.StatusInternalServerError, rw)
 			return
 		}
 
@@ -138,16 +180,26 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(rw, "buffers freed: %d\n", n)
 }
 
-func handleWrite(rw http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(rw, "Method Not Allowed", http.StatusMethodNotAllowed)
-		return
-	}
+// handleWrite godoc
+// @summary Receive metrics in line-protocol
+// @tags write
+// @description Receives metrics in the influx line-protocol using [this format](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md)
 
+// @accept      plain
+// @produce     json
+// @param       cluster        query string false "If the lines in the body do not have a cluster tag, use this value instead."
+// @success     200            {string} string  "ok"
+// @failure     400            {object} api.ErrorResponse       "Bad Request"
+// @failure     401            {object} api.ErrorResponse       "Unauthorized"
+// @failure     403            {object} api.ErrorResponse       "Forbidden"
+// @failure     500            {object} api.ErrorResponse       "Internal Server Error"
+// @security    ApiKeyAuth
+// @router      /write/ [post]
+func handleWrite(rw http.ResponseWriter, r *http.Request) {
 	bytes, err := io.ReadAll(r.Body)
+	rw.Header().Add("Content-Type", "application/json")
 	if err != nil {
-		log.Printf("error while reading request body: %s", err.Error())
-		http.Error(rw, err.Error(), http.StatusInternalServerError)
+		handleError(err, http.StatusInternalServerError, rw)
 		return
 	}
 
@@ -155,7 +207,7 @@ func handleWrite(rw http.ResponseWriter, r *http.Request) {
 	dec := lineprotocol.NewDecoderWithBytes(bytes)
 	if err := decodeLine(dec, ms, r.URL.Query().Get("cluster")); err != nil {
 		log.Printf("/api/write error: %s", err.Error())
-		http.Error(rw, err.Error(), http.StatusBadRequest)
+		handleError(err, http.StatusBadRequest, rw)
 		return
 	}
 	rw.WriteHeader(http.StatusOK)
@@ -180,19 +232,33 @@ type ApiQueryResponse struct {
 type ApiQuery struct {
 	Type        *string    `json:"type,omitempty"`
 	SubType     *string    `json:"subtype,omitempty"`
-	Metric      string   `json:"metric"`
-	Hostname    string   `json:"host"`
-	TypeIds     []string `json:"type-ids,omitempty"`
-	SubTypeIds  []string `json:"subtype-ids,omitempty"`
+	Metric      string     `json:"metric"`
+	Hostname    string     `json:"host"`
+	TypeIds     []string   `json:"type-ids,omitempty"`
+	SubTypeIds  []string   `json:"subtype-ids,omitempty"`
 	ScaleFactor util.Float `json:"scale-by,omitempty"`
 	Aggregate   bool       `json:"aggreg"`
 }
 
+// handleQuery godoc
+// @summary    Query metrics
+// @tags query
+// @description Query metrics.
+// @accept      json
+// @produce     json
+// @param       request body     api.ApiQueryRequest  true "API query payload object"
+// @success     200            {object} api.ApiQueryResponse  "API query response object"
+// @failure     400            {object} api.ErrorResponse       "Bad Request"
+// @failure     401   		   {object} api.ErrorResponse       "Unauthorized"
+// @failure     403            {object} api.ErrorResponse       "Forbidden"
+// @failure     500            {object} api.ErrorResponse       "Internal Server Error"
+// @security    ApiKeyAuth
+// @router      /query/ [get]
 func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	var err error
 	req := ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(rw, err.Error(), http.StatusBadRequest)
+		handleError(err, http.StatusBadRequest, rw)
 		return
 	}
 
@@ -305,64 +371,30 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleDebug godoc
+// @summary Debug endpoint
+// @tags debug
+// @description Write metrics to store
+// @produce     json
+// @param       selector        query    string            false "Selector"
+// @success     200            {string} string  "Debug dump"
+// @failure     400            {object} api.ErrorResponse       "Bad Request"
+// @failure     401            {object} api.ErrorResponse       "Unauthorized"
+// @failure     403            {object} api.ErrorResponse       "Forbidden"
+// @failure     500            {object} api.ErrorResponse       "Internal Server Error"
+// @security    ApiKeyAuth
+// @router      /debug/ [post]
 func handleDebug(rw http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("selector")
+	rw.Header().Add("Content-Type", "application/json")
 	selector := []string{}
 	if len(raw) != 0 {
 		selector = strings.Split(raw, ":")
-		}
+	}
 
 	ms := memorystore.GetMemoryStore()
 	if err := ms.DebugDump(bufio.NewWriter(rw), selector); err != nil {
-		rw.WriteHeader(http.StatusBadRequest)
-		rw.Write([]byte(err.Error()))
-		}
-}
-
-func StartApiServer(ctx context.Context, httpConfig *config.HttpConfig) error {
-	r := mux.NewRouter()
-
-	r.HandleFunc("/api/free", handleFree)
-	r.HandleFunc("/api/write", handleWrite)
-	r.HandleFunc("/api/query", handleQuery)
-	r.HandleFunc("/api/debug", handleDebug)
-
-	server := &http.Server{
-		Handler:      r,
-		Addr:         httpConfig.Address,
-		WriteTimeout: 30 * time.Second,
-		ReadTimeout:  30 * time.Second,
-	}
-
-	if len(config.Keys.JwtPublicKey) > 0 {
-		buf, err := base64.StdEncoding.DecodeString(config.Keys.JwtPublicKey)
-		if err != nil {
-			return err
-		}
-		publicKey := ed25519.PublicKey(buf)
-		server.Handler = authentication(server.Handler, publicKey)
-	}
-
-	go func() {
-		if httpConfig.CertFile != "" && httpConfig.KeyFile != "" {
-			log.Printf("API https endpoint listening on '%s'\n", httpConfig.Address)
-			err := server.ListenAndServeTLS(httpConfig.CertFile, httpConfig.KeyFile)
-			if err != nil && err != http.ErrServerClosed {
-				log.Println(err)
-			}
-		} else {
-			log.Printf("API http endpoint listening on '%s'\n", httpConfig.Address)
-			err := server.ListenAndServe()
-			if err != nil && err != http.ErrServerClosed {
-				log.Println(err)
-			}
-		}
-	}()
-
-	for {
-		<-ctx.Done()
-		err := server.Shutdown(context.Background())
-		log.Println("API server shut down")
-		return err
+		handleError(err, http.StatusBadRequest, rw)
+		return
 	}
 }

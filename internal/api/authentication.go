@@ -10,7 +10,7 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 )
 
-func authentication(next http.Handler, publicKey ed25519.PublicKey) http.Handler {
+func authHandler(next http.Handler, publicKey ed25519.PublicKey) http.Handler {
 	cacheLock := sync.RWMutex{}
 	cache := map[string]*jwt.Token{}
 
