@@ -1,15 +1,33 @@
-# TODOs
+# Possible Tasks and Improvements
 
-- Improve checkpoints/archives
+- Benchmarking
+  - Benchmark and compare common timeseries DBs with our data and our queries
+- Memory management
+  - To overcome garbage collection overhead: Reimplement in Rust
+  - Request memory directly batchwise via mmap (started in branch)
+- Archive
+  - S3 backend for archive
   - Store information in each buffer if already archived
   - Do not create new checkpoint if all buffers already archived
-- Missing Testcases:
+- Checkpoints
+  - S3 backend for checkpoints
+  - Combine checkpoints into larger files
+  - Binary checkpoints (started in branch)
+- API
+  - Redesign query interface
+  - Introduce JWT authentication for REST and NATS
+- Testing
   - General tests
   - Check for corner cases that should fail gracefully
-  - Write a more realistic `ToArchive`/`FromArchive` tests
-- Optimization: Once a buffer is full, calculate min, max and avg
-  - Calculate averages buffer-wise, average weighted by length of buffer
+  - Write a more realistic `ToArchive`/`FromArchive` Tests
+- Aggregation
+  - Calculate averages buffer-wise as soon as full, average weighted by length of buffer
   - Only the head-buffer needs to be fully traversed
-- Optimization: If aggregating over hwthreads/cores/sockets cache those results
-  and reuse some of that for new queres aggregating only over the newer data
-- ...
+  - If aggregating over hwthreads/cores/sockets cache those results and reuse
+    some of that for new queries aggregating only over the newer data
+- Compression
+  - Enable compression for http API requests
+  - Enable compression for checkpoints/archive
+- Sampling
+  - Support data re sampling to reduce data points
+  - Support re sampling algorithms that preserve min/max as far as possible
