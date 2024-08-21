@@ -107,6 +107,10 @@ func (l *Level) sizeInBytes() int64 {
 		}
 	}
 
+	for _, child := range l.children {
+		size += child.sizeInBytes()
+	}
+
 	return size
 }
 

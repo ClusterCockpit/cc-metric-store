@@ -47,13 +47,14 @@ type ErrorResponse struct {
 }
 
 type ApiMetricData struct {
-	Error *string         `json:"error,omitempty"`
-	Data  util.FloatArray `json:"data,omitempty"`
-	From  int64           `json:"from"`
-	To    int64           `json:"to"`
-	Avg   util.Float      `json:"avg"`
-	Min   util.Float      `json:"min"`
-	Max   util.Float      `json:"max"`
+	Error      *string         `json:"error,omitempty"`
+	Data       util.FloatArray `json:"data,omitempty"`
+	From       int64           `json:"from"`
+	To         int64           `json:"to"`
+	Resolution int64           `json:"resolution"`
+	Avg        util.Float      `json:"avg"`
+	Min        util.Float      `json:"min"`
+	Max        util.Float      `json:"max"`
 }
 
 func handleError(err error, statusCode int, rw http.ResponseWriter) {
@@ -234,6 +235,7 @@ type ApiQuery struct {
 	SubType     *string    `json:"subtype,omitempty"`
 	Metric      string     `json:"metric"`
 	Hostname    string     `json:"host"`
+	Resolution  int64      `json:"resolution"`
 	TypeIds     []string   `json:"type-ids,omitempty"`
 	SubTypeIds  []string   `json:"subtype-ids,omitempty"`
 	ScaleFactor util.Float `json:"scale-by,omitempty"`
@@ -336,8 +338,8 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 		res := make([]ApiMetricData, 0, len(sels))
 		for _, sel := range sels {
 			data := ApiMetricData{}
-			data.Data, data.From, data.To, err = ms.Read(sel, query.Metric, req.From, req.To)
-			// log.Printf("data: %#v, %#v, %#v, %#v", data.Data, data.From, data.To, err)
+			data.Data, data.From, data.To, data.Resolution, err = ms.Read(sel, query.Metric, req.From, req.To, query.Resolution)
+
 			if err != nil {
 				msg := err.Error()
 				data.Error = &msg
