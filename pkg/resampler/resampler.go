@@ -2,6 +2,7 @@ package resampler
 
 import (
 	"errors"
+	"fmt"
 	"math"
 
 	"github.com/ClusterCockpit/cc-metric-store/internal/util"
@@ -34,14 +35,14 @@ func SimpleResampler(data []util.Float, old_frequency int64, new_frequency int64
 
 // Inspired by one of the algorithms from https://skemman.is/bitstream/1946/15343/3/SS_MSthesis.pdf
 // Adapted from https://github.com/haoel/downsampling/blob/master/core/lttb.go
-func LargestTriangleThreeBucket(data []util.Float, old_frequency int64, new_frequency int64) ([]util.Float, int64, error) {
+func LargestTriangleThreeBucket(data []util.Float, old_frequency int, new_frequency int) ([]util.Float, int, error) {
 
 	if old_frequency == 0 || new_frequency == 0 {
 		return data, old_frequency, nil
 	}
 
 	if new_frequency%old_frequency != 0 {
-		return nil, 0, errors.New("new sampling frequency should be multiple of the old frequency")
+		return nil, 0, errors.New(fmt.Sprintf("new sampling frequency : %d should be multiple of the old frequency : %d", new_frequency, old_frequency))
 	}
 
 	var step int = int(new_frequency / old_frequency)
@@ -89,6 +90,7 @@ func LargestTriangleThreeBucket(data []util.Float, old_frequency int64, new_freq
 		maxArea := -1.0
 
 		var maxAreaPoint int
+		flag_ := 0
 		for ; currBucketStart < currBucketEnd; currBucketStart++ {
 
 			area := calculateTriangleArea(util.Float(pointX), pointY, avgPointX, avgPointY, util.Float(currBucketStart), data[currBucketStart])
@@ -96,10 +98,19 @@ func LargestTriangleThreeBucket(data []util.Float, old_frequency int64, new_freq
 				maxArea = area
 				maxAreaPoint = currBucketStart
 			}
+			if math.IsNaN(float64(avgPointY)) {
+				flag_ = 1
+
+			}
 		}
 
-		new_data = append(new_data, data[maxAreaPoint]) // Pick this point from the bucket
-		prevMaxAreaPoint = maxAreaPoint                 // This MaxArea point is the next's prevMAxAreaPoint
+		if flag_ == 1 {
+			new_data = append(new_data, util.NaN) // Pick this point from the bucket
+
+		} else {
+			new_data = append(new_data, data[maxAreaPoint]) // Pick this point from the bucket
+		}
+		prevMaxAreaPoint = maxAreaPoint // This MaxArea point is the next's prevMAxAreaPoint
 
 		//move to the next window
 		bucketLow = bucketMiddle

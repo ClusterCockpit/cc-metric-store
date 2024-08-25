@@ -12,14 +12,24 @@ func calculateTriangleArea(paX, paY, pbX, pbY, pcX, pcY util.Float) float64 {
 }
 
 func calculateAverageDataPoint(points []util.Float, xStart int64) (avgX util.Float, avgY util.Float) {
-
+	flag := 0
 	for _, point := range points {
 		avgX += util.Float(xStart)
 		avgY += point
 		xStart++
+		if math.IsNaN(float64(point)) {
+			flag = 1
+		}
 	}
+
 	l := util.Float(len(points))
+
 	avgX /= l
 	avgY /= l
-	return avgX, avgY
+
+	if flag == 1 {
+		return avgX, util.NaN
+	} else {
+		return avgX, avgY
+	}
 }
