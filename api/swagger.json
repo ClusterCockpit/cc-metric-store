@@ -75,7 +75,7 @@
             }
         },
         "/free/": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
@@ -273,6 +273,9 @@
                 "min": {
                     "type": "number"
                 },
+                "resolution": {
+                    "type": "integer"
+                },
                 "to": {
                     "type": "integer"
                 }
@@ -289,6 +292,9 @@
                 },
                 "metric": {
                     "type": "string"
+                },
+                "resolution": {
+                    "type": "integer"
                 },
                 "scale-by": {
                     "type": "number"

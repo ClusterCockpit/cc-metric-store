@@ -16,6 +16,8 @@ definitions:
         type: number
       min:
         type: number
+      resolution:
+        type: integer
       to:
         type: integer
     type: object
@@ -27,6 +29,8 @@ definitions:
         type: string
       metric:
         type: string
+      resolution:
+        type: integer
       scale-by:
         type: number
       subtype:
@@ -137,7 +141,7 @@ paths:
       tags:
       - debug
   /free/:
-    get:
+    post:
       parameters:
       - description: up to timestamp
         in: query

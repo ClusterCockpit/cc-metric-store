@@ -255,7 +255,8 @@ func decodeLine(dec *lineprotocol.Decoder,
 				if len(subTypeBuf) == 0 {
 					subTypeBuf = append(subTypeBuf, val...)
 				} else {
-					subTypeBuf = reorder(typeBuf, val)
+					subTypeBuf = reorder(subTypeBuf, val)
+					// subTypeBuf = reorder(typeBuf, val)
 				}
 			case "stype-id":
 				subTypeBuf = append(subTypeBuf, val...)
@@ -308,7 +309,7 @@ func decodeLine(dec *lineprotocol.Decoder,
 		}
 
 		if t, err = dec.Time(lineprotocol.Second, t); err != nil {
-			return err
+			return fmt.Errorf("timestamp : %#v with error : %#v", lineprotocol.Second, err.Error())
 		}
 
 		if err := ms.WriteToLevel(lvl, selector, t.Unix(), []memorystore.Metric{metric}); err != nil {

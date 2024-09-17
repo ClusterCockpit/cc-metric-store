@@ -42,7 +42,7 @@ func LargestTriangleThreeBucket(data []util.Float, old_frequency int64, new_freq
 	}
 
 	if new_frequency%old_frequency != 0 {
-		return nil, 0, errors.New(fmt.Sprintf("new sampling frequency : %d should be multiple of the old frequency : %d", new_frequency, old_frequency))
+		return nil, 0, fmt.Errorf("new sampling frequency : %d should be multiple of the old frequency : %d", new_frequency, old_frequency)
 	}
 
 	var step int = int(new_frequency / old_frequency)
@@ -100,7 +100,6 @@ func LargestTriangleThreeBucket(data []util.Float, old_frequency int64, new_freq
 			}
 			if math.IsNaN(float64(avgPointY)) {
 				flag_ = 1
-
 			}
 		}
 

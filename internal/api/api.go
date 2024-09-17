@@ -136,7 +136,7 @@ func (data *ApiMetricData) PadDataWithNull(ms *memorystore.MemoryStore, from, to
 // @failure     403            {object} api.ErrorResponse       "Forbidden"
 // @failure     500            {object} api.ErrorResponse       "Internal Server Error"
 // @security    ApiKeyAuth
-// @router      /free/ [get]
+// @router      /free/ [post]
 func handleFree(rw http.ResponseWriter, r *http.Request) {
 	rawTo := r.URL.Query().Get("to")
 	if rawTo == "" {

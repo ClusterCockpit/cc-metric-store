@@ -19,6 +19,8 @@
 /var
 /configs
 
+sample.txt
 
 migrateTimestamps.pl
 test_ccms_api.sh
+test_ccms_free_api.sh
