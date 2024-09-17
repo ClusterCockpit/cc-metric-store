@@ -258,6 +258,10 @@ type ApiQuery struct {
 // @router      /query/ [get]
 func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	var err error
+	ver := r.URL.Query().Get("version")
+	if ver == "" {
+		ver = "v2"
+	}
 	req := ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		handleError(err, http.StatusBadRequest, rw)
@@ -338,8 +342,11 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 		res := make([]ApiMetricData, 0, len(sels))
 		for _, sel := range sels {
 			data := ApiMetricData{}
-			data.Data, data.From, data.To, data.Resolution, err = ms.Read(sel, query.Metric, req.From, req.To, query.Resolution)
-
+			if ver == "v1" {
+				data.Data, data.From, data.To, data.Resolution, err = ms.Read(sel, query.Metric, req.From, req.To, 0)
+			} else {
+				data.Data, data.From, data.To, data.Resolution, err = ms.Read(sel, query.Metric, req.From, req.To, query.Resolution)
+			}
 			if err != nil {
 				msg := err.Error()
 				data.Error = &msg
