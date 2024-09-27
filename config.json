@@ -166,20 +166,20 @@
         }
     },
     "checkpoints": {
-        "interval": "12h",
+        "interval": "1h",
         "directory": "./var/checkpoints",
-        "restore": "48h"
+        "restore": "1h"
     },
     "archive": {
-        "interval": "168h",
+        "interval": "2h",
         "directory": "./var/archive"
     },
     "http-api": {
-        "address": "localhost:8081",
+        "address": "localhost:8082",
         "https-cert-file": null,
         "https-key-file": null
     },
-    "retention-in-memory": "48h",
+    "retention-in-memory": "1h",
     "nats": null,
     "jwt-public-key": "kzfYrYy+TzpanWZHJ5qSdMj5uKUWgq74BWhQG6copP0="
 }
