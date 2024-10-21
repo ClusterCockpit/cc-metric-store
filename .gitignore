@@ -17,9 +17,6 @@
 
 # Project specific ignores
 /var
-/configs
-
-sample.txt
 
 migrateTimestamps.pl
 test_ccms_api.sh
