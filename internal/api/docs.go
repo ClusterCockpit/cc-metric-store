@@ -81,7 +81,7 @@ const docTemplate = `{
             }
         },
         "/free/": {
-            "get": {
+            "post": {
                 "security": [
                     {
                         "ApiKeyAuth": []
@@ -279,6 +279,9 @@ const docTemplate = `{
                 "min": {
                     "type": "number"
                 },
+                "resolution": {
+                    "type": "integer"
+                },
                 "to": {
                     "type": "integer"
                 }
@@ -295,6 +298,9 @@ const docTemplate = `{
                 },
                 "metric": {
                     "type": "string"
+                },
+                "resolution": {
+                    "type": "integer"
                 },
                 "scale-by": {
                     "type": "number"

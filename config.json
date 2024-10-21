@@ -1,45 +1,185 @@
 {
-  "metrics": {
-    "flops_any": {
-      "frequency": 15,
-      "aggregation": "sum"
+    "metrics": {
+        "debug_metric": {
+            "frequency": 60,
+            "aggregation": "avg"
+        },
+        "clock": {
+            "frequency": 60,
+            "aggregation": "avg"
+        },
+        "cpu_idle": {
+            "frequency": 60,
+            "aggregation": "avg"
+        },
+        "cpu_iowait": {
+            "frequency": 60,
+            "aggregation": "avg"
+        },
+        "cpu_irq": {
+            "frequency": 60,
+            "aggregation": "avg"
+        },
+        "cpu_system": {
+            "frequency": 60,
+            "aggregation": "avg"
+        },
+        "cpu_user": {
+            "frequency": 60,
+            "aggregation": "avg"
+        },
+        "nv_mem_util": {
+            "frequency": 60,
+            "aggregation": "avg"
+        },
+        "nv_temp": {
+            "frequency": 60,
+            "aggregation": "avg"
+        },
+        "nv_sm_clock": {
+            "frequency": 60,
+            "aggregation": "avg"
+        },
+        "acc_utilization": {
+            "frequency": 60,
+            "aggregation": "avg"
+        },
+        "acc_mem_used": {
+            "frequency": 60,
+            "aggregation": "sum"
+        },
+        "acc_power": {
+            "frequency": 60,
+            "aggregation": "sum"
+        },
+        "flops_any": {
+            "frequency": 60,
+            "aggregation": "sum"
+        },
+        "flops_dp": {
+            "frequency": 60,
+            "aggregation": "sum"
+        },
+        "flops_sp": {
+            "frequency": 60,
+            "aggregation": "sum"
+        },
+        "ib_recv": {
+            "frequency": 60,
+            "aggregation": "sum"
+        },
+        "ib_xmit": {
+            "frequency": 60,
+            "aggregation": "sum"
+        },
+        "ib_recv_pkts": {
+            "frequency": 60,
+            "aggregation": "sum"
+        },
+        "ib_xmit_pkts": {
+            "frequency": 60,
+            "aggregation": "sum"
+        },
+        "cpu_power": {
+            "frequency": 60,
+            "aggregation": "sum"
+        },
+        "core_power": {
+            "frequency": 60,
+            "aggregation": "sum"
+        },
+        "mem_power": {
+            "frequency": 60,
+            "aggregation": "sum"
+        },
+        "ipc": {
+            "frequency": 60,
+            "aggregation": "avg"
+        },
+        "cpu_load": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "lustre_close": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "lustre_open": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "lustre_statfs": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "lustre_read_bytes": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "lustre_write_bytes": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "net_bw": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "file_bw": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "mem_bw": {
+            "frequency": 60,
+            "aggregation": "sum"
+        },
+        "mem_cached": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "mem_used": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "net_bytes_in": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "net_bytes_out": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "nfs4_read": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "nfs4_total": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "nfs4_write": {
+            "frequency": 60,
+            "aggregation": null
+        },
+        "vectorization_ratio": {
+            "frequency": 60,
+            "aggregation": "avg"
+        }
     },
-    "flops_dp": {
-      "frequency": 15,
-      "aggregation": "sum"
+    "checkpoints": {
+        "interval": "1h",
+        "directory": "./var/checkpoints",
+        "restore": "1h"
     },
-    "flops_sp": {
-      "frequency": 15,
-      "aggregation": "sum"
+    "archive": {
+        "interval": "2h",
+        "directory": "./var/archive"
     },
-    "mem_bw": {
-      "frequency": 15,
-      "aggregation": "sum"
+    "http-api": {
+        "address": "localhost:8082",
+        "https-cert-file": null,
+        "https-key-file": null
     },
-    "load_one": {
-      "frequency": 15,
-      "aggregation": null
-    },
-    "load_five": {
-      "frequency": 15,
-      "aggregation": null
-    }
-  },
-  "checkpoints": {
-    "interval": "12h",
-    "directory": "./var/checkpoints",
-    "restore": "48h"
-  },
-  "archive": {
-    "interval": "168h",
-    "directory": "./var/archive"
-  },
-  "http-api": {
-    "address": "127.0.0.1:8081",
-    "https-cert-file": null,
-    "https-key-file": null
-  },
-  "retention-in-memory": "48h",
-  "nats": null,
-  "jwt-public-key": "kzfYrYy+TzpanWZHJ5qSdMj5uKUWgq74BWhQG6copP0="
+    "retention-in-memory": "1h",
+    "nats": null,
+    "jwt-public-key": "kzfYrYy+TzpanWZHJ5qSdMj5uKUWgq74BWhQG6copP0="
 }

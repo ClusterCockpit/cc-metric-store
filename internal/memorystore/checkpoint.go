@@ -478,8 +478,10 @@ func findFiles(direntries []fs.DirEntry, t int64, findMoreRecentFiles bool) ([]s
 		e := direntries[i]
 		ts1 := nums[e.Name()]
 
-		if findMoreRecentFiles && t <= ts1 || i == len(direntries)-1 {
+		if findMoreRecentFiles && t <= ts1 {
 			filenames = append(filenames, e.Name())
+		}
+		if i == len(direntries)-1 {
 			continue
 		}
 

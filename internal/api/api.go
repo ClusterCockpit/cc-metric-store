@@ -47,13 +47,14 @@ type ErrorResponse struct {
 }
 
 type ApiMetricData struct {
-	Error *string         `json:"error,omitempty"`
-	Data  util.FloatArray `json:"data,omitempty"`
-	From  int64           `json:"from"`
-	To    int64           `json:"to"`
-	Avg   util.Float      `json:"avg"`
-	Min   util.Float      `json:"min"`
-	Max   util.Float      `json:"max"`
+	Error      *string         `json:"error,omitempty"`
+	Data       util.FloatArray `json:"data,omitempty"`
+	From       int64           `json:"from"`
+	To         int64           `json:"to"`
+	Resolution int64           `json:"resolution"`
+	Avg        util.Float      `json:"avg"`
+	Min        util.Float      `json:"min"`
+	Max        util.Float      `json:"max"`
 }
 
 func handleError(err error, statusCode int, rw http.ResponseWriter) {
@@ -135,7 +136,7 @@ func (data *ApiMetricData) PadDataWithNull(ms *memorystore.MemoryStore, from, to
 // @failure     403            {object} api.ErrorResponse       "Forbidden"
 // @failure     500            {object} api.ErrorResponse       "Internal Server Error"
 // @security    ApiKeyAuth
-// @router      /free/ [get]
+// @router      /free/ [post]
 func handleFree(rw http.ResponseWriter, r *http.Request) {
 	rawTo := r.URL.Query().Get("to")
 	if rawTo == "" {
@@ -234,6 +235,7 @@ type ApiQuery struct {
 	SubType     *string    `json:"subtype,omitempty"`
 	Metric      string     `json:"metric"`
 	Hostname    string     `json:"host"`
+	Resolution  int64      `json:"resolution"`
 	TypeIds     []string   `json:"type-ids,omitempty"`
 	SubTypeIds  []string   `json:"subtype-ids,omitempty"`
 	ScaleFactor util.Float `json:"scale-by,omitempty"`
@@ -256,6 +258,10 @@ type ApiQuery struct {
 // @router      /query/ [get]
 func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	var err error
+	ver := r.URL.Query().Get("version")
+	if ver == "" {
+		ver = "v2"
+	}
 	req := ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		handleError(err, http.StatusBadRequest, rw)
@@ -336,8 +342,11 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 		res := make([]ApiMetricData, 0, len(sels))
 		for _, sel := range sels {
 			data := ApiMetricData{}
-			data.Data, data.From, data.To, err = ms.Read(sel, query.Metric, req.From, req.To)
-			// log.Printf("data: %#v, %#v, %#v, %#v", data.Data, data.From, data.To, err)
+			if ver == "v1" {
+				data.Data, data.From, data.To, data.Resolution, err = ms.Read(sel, query.Metric, req.From, req.To, 0)
+			} else {
+				data.Data, data.From, data.To, data.Resolution, err = ms.Read(sel, query.Metric, req.From, req.To, query.Resolution)
+			}
 			if err != nil {
 				msg := err.Error()
 				data.Error = &msg

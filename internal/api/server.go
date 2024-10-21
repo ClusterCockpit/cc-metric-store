@@ -20,11 +20,23 @@ func MountRoutes(r *http.ServeMux) {
 			log.Fatalf("starting server failed: %v", err)
 		}
 		publicKey := ed25519.PublicKey(buf)
+		// Compatibility
+		r.Handle("POST /api/free", authHandler(http.HandlerFunc(handleFree), publicKey))
+		r.Handle("POST /api/write", authHandler(http.HandlerFunc(handleWrite), publicKey))
+		r.Handle("GET /api/query", authHandler(http.HandlerFunc(handleQuery), publicKey))
+		r.Handle("GET /api/debug", authHandler(http.HandlerFunc(handleDebug), publicKey))
+		// Refactor
 		r.Handle("POST /api/free/", authHandler(http.HandlerFunc(handleFree), publicKey))
 		r.Handle("POST /api/write/", authHandler(http.HandlerFunc(handleWrite), publicKey))
 		r.Handle("GET /api/query/", authHandler(http.HandlerFunc(handleQuery), publicKey))
 		r.Handle("GET /api/debug/", authHandler(http.HandlerFunc(handleDebug), publicKey))
 	} else {
+		// Compatibility
+		r.HandleFunc("POST /api/free", handleFree)
+		r.HandleFunc("POST /api/write", handleWrite)
+		r.HandleFunc("GET /api/query", handleQuery)
+		r.HandleFunc("GET /api/debug", handleDebug)
+		// Refactor
 		r.HandleFunc("POST /api/free/", handleFree)
 		r.HandleFunc("POST /api/write/", handleWrite)
 		r.HandleFunc("GET /api/query/", handleQuery)
