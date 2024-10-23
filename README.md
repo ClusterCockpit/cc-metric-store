@@ -6,24 +6,40 @@ The cc-metric-store provides a simple in-memory time series database for storing
 metrics of cluster nodes at preconfigured intervals. It is meant to be used as
 part of the [ClusterCockpit suite](https://github.com/ClusterCockpit). As all
 data is kept in-memory (but written to disk as compressed JSON for long term
-storage), accessing it is very fast. It also provides aggregations over time
-_and_ nodes/sockets/cpus.
+storage), accessing it is very fast. It also provides topology aware
+aggregations over time _and_ nodes/sockets/cpus.
 
 There are major limitations: Data only gets written to disk at periodic
-checkpoints, not as soon as it is received.
+checkpoints, not as soon as it is received. Also only the fixed configured
+duration is stored and available.
 
-Go look at the `TODO.md` file and the [GitHub
+Go look at the [GitHub
 Issues](https://github.com/ClusterCockpit/cc-metric-store/issues) for a progress
-overview. Things work, but are not properly tested. The
-[NATS.io](https://nats.io/) based writing endpoint consumes messages in [this
+overview. The [NATS.io](https://nats.io/) based writing endpoint consumes messages in [this
 format of the InfluxDB line
 protocol](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md).
+
+## Building
+
+`cc-metric-store` can be built using the provided `Makefile`.
+It supports the following targets:
+
+- `make`: Build the application, copy a example configuration file and generate
+  checkpoint folders if required.
+- `make clean`: Clean the golang build cache and application binary
+- `make distclean`: In addition to the clean target also remove the `./var`
+  folder
+- `make swagger`: Regenerate the Swagger files from the source comments.
+- `make test`: Run test and basic checks.
 
 ## REST API Endpoints
 
 The REST API is documented in [swagger.json](./api/swagger.json). You can
 explore and try the REST API using the integrated [SwaggerUI web
 interface](http://localhost:8082/swagger).
+
+For more information on the `cc-metric-store` REST API have a look at the
+ClusterCockpit documentation [website](https://clustercockpit.org/docs/reference/cc-metric-store/ccms-rest-api/)
 
 ## Run tests
 
@@ -42,19 +58,14 @@ go test -bench=. -race -v ./...
 
 ## What are these selectors mentioned in the code?
 
-Tags in InfluxDB are used to build indexes over the stored data. InfluxDB-Tags
-have no relation to each other, they do not depend on each other and have no
-hierarchy. Different tags build up different indexes (I am no expert at all, but
-this is how i think they work).
-
-This project also works as a time-series database and uses the InfluxDB line
-protocol. Unlike InfluxDB, the data is indexed by one single strictly
-hierarchical tree structure. A selector is build out of the tags in the InfluxDB
-line protocol, and can be used to select a node (not in the sense of a compute
-node, can also be a socket, cpu, ...) in that tree. The implementation calls
-those nodes `level` to avoid confusion. It is impossible to access data only by
-knowing the _socket_ or _cpu_ tag, all higher up levels have to be specified as
-well.
+The cc-metric-store works as a time-series database and uses the InfluxDB line
+protocol as input format. Unlike InfluxDB, the data is indexed by one single
+strictly hierarchical tree structure. A selector is build out of the tags in the
+InfluxDB line protocol, and can be used to select a node (not in the sense of a
+compute node, can also be a socket, cpu, ...) in that tree. The implementation
+calls those nodes `level` to avoid confusion. It is impossible to access data
+only by knowing the _socket_ or _cpu_ tag, all higher up levels have to be
+specified as well.
 
 This is what the hierarchy currently looks like:
 
@@ -68,6 +79,8 @@ This is what the hierarchy currently looks like:
     - cpu3
     - cpu4
     - ...
+    - gpu1
+    - gpu2
   - host2
   - ...
 - cluster2
@@ -81,42 +94,14 @@ Example selectors:
 
 ## Config file
 
-All durations are specified as string that will be parsed [like
-this](https://pkg.go.dev/time#ParseDuration) (Allowed suffixes: `s`, `m`, `h`,
-...).
-
-- `metrics`: Map of metric-name to objects with the following properties
-  - `frequency`: Timestep/Interval/Resolution of this metric
-  - `aggregation`: Can be `"sum"`, `"avg"` or `null`
-    - `null` means aggregation across nodes is forbidden for this metric
-    - `"sum"` means that values from the child levels are summed up for the parent level
-    - `"avg"` means that values from the child levels are averaged for the parent level
-  - `scope`: Unused at the moment, should be something like `"node"`, `"socket"` or `"hwthread"`
-- `nats`:
-  - `address`: Url of NATS.io server, example: "nats://localhost:4222"
-  - `username` and `password`: Optional, if provided use those for the connection
-  - `subscriptions`:
-    - `subscribe-to`: Where to expect the measurements to be published
-    - `cluster-tag`: Default value for the cluster tag
-- `http-api`:
-  - `address`: Address to bind to, for example `0.0.0.0:8080`
-  - `https-cert-file` and `https-key-file`: Optional, if provided enable HTTPS using those files as certificate/key
-- `jwt-public-key`: Base64 encoded string, use this to verify requests to the HTTP API
-- `retention-on-memory`: Keep all values in memory for at least that amount of time
-- `checkpoints`:
-  - `interval`: Do checkpoints every X seconds/minutes/hours
-  - `directory`: Path to a directory
-  - `restore`: After a restart, load the last X seconds/minutes/hours of data back into memory
-- `archive`:
-  - `interval`: Move and compress all checkpoints not needed anymore every X seconds/minutes/hours
-  - `directory`: Path to a directory
+You find the configuration options on the ClusterCockpit [website](https://clustercockpit.org/docs/reference/cc-metric-store/ccms-configuration/).
 
 ## Test the complete setup (excluding cc-backend itself)
 
 There are two ways for sending data to the cc-metric-store, both of which are
 supported by the
 [cc-metric-collector](https://github.com/ClusterCockpit/cc-metric-collector).
-This example uses Nats, the alternative is to use HTTP.
+This example uses NATS, the alternative is to use HTTP.
 
 ```sh
 # Only needed once, downloads the docker image

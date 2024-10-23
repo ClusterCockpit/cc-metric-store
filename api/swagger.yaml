@@ -106,7 +106,7 @@ info:
 paths:
   /debug/:
     post:
-      description: Write metrics to store
+      description: This endpoint allows the users to print the content of
       parameters:
       - description: Selector
         in: query
@@ -142,6 +142,7 @@ paths:
       - debug
   /free/:
     post:
+      description: This endpoint allows the users to free the Buffers from the
       parameters:
       - description: up to timestamp
         in: query
@@ -178,7 +179,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Query metrics.
+      description: This endpoint allows the users to retrieve data from the
       parameters:
       - description: API query payload object
         in: body
