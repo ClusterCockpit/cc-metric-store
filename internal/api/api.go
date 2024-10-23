@@ -127,7 +127,10 @@ func (data *ApiMetricData) PadDataWithNull(ms *memorystore.MemoryStore, from, to
 // handleFree godoc
 // @summary
 // @tags free
-// @description
+// @description This endpoint allows the users to free the Buffers from the
+// metric store. This endpoint offers the users to remove then systematically
+// and also allows then to prune the data under node, if they do not want to
+// remove the whole node.
 // @produce     json
 // @param       to        query    string        false  "up to timestamp"
 // @success     200            {string} string  "ok"
@@ -182,9 +185,9 @@ func handleFree(rw http.ResponseWriter, r *http.Request) {
 }
 
 // handleWrite godoc
-// @summary Receive metrics in line-protocol
+// @summary Receive metrics in InfluxDB line-protocol
 // @tags write
-// @description Receives metrics in the influx line-protocol using [this format](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md)
+// @description Write data to the in-memory store in the InfluxDB line-protocol using [this format](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md)
 
 // @accept      plain
 // @produce     json
@@ -245,7 +248,9 @@ type ApiQuery struct {
 // handleQuery godoc
 // @summary    Query metrics
 // @tags query
-// @description Query metrics.
+// @description This endpoint allows the users to retrieve data from the
+// in-memory database. The CCMS will return data in JSON format for the
+// specified interval requested by the user
 // @accept      json
 // @produce     json
 // @param       request body     api.ApiQueryRequest  true "API query payload object"
@@ -383,7 +388,8 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 // handleDebug godoc
 // @summary Debug endpoint
 // @tags debug
-// @description Write metrics to store
+// @description This endpoint allows the users to print the content of
+// nodes/clusters/metrics to review the state of the data.
 // @produce     json
 // @param       selector        query    string            false "Selector"
 // @success     200            {string} string  "Debug dump"
