@@ -6,16 +6,16 @@ The cc-metric-store provides a simple in-memory time series database for storing
 metrics of cluster nodes at preconfigured intervals. It is meant to be used as
 part of the [ClusterCockpit suite](https://github.com/ClusterCockpit). As all
 data is kept in-memory (but written to disk as compressed JSON for long term
-storage), accessing it is very fast. It also provides aggregations over time
-_and_ nodes/sockets/cpus.
+storage), accessing it is very fast. It also provides topology aware
+aggregations over time _and_ nodes/sockets/cpus.
 
 There are major limitations: Data only gets written to disk at periodic
-checkpoints, not as soon as it is received.
+checkpoints, not as soon as it is received. Also only the fixed configured
+duration is stored and available.
 
-Go look at the `TODO.md` file and the [GitHub
+Go look at the [GitHub
 Issues](https://github.com/ClusterCockpit/cc-metric-store/issues) for a progress
-overview. Things work, but are not properly tested. The
-[NATS.io](https://nats.io/) based writing endpoint consumes messages in [this
+overview. The [NATS.io](https://nats.io/) based writing endpoint consumes messages in [this
 format of the InfluxDB line
 protocol](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md).
 
@@ -42,19 +42,14 @@ go test -bench=. -race -v ./...
 
 ## What are these selectors mentioned in the code?
 
-Tags in InfluxDB are used to build indexes over the stored data. InfluxDB-Tags
-have no relation to each other, they do not depend on each other and have no
-hierarchy. Different tags build up different indexes (I am no expert at all, but
-this is how i think they work).
-
-This project also works as a time-series database and uses the InfluxDB line
-protocol. Unlike InfluxDB, the data is indexed by one single strictly
-hierarchical tree structure. A selector is build out of the tags in the InfluxDB
-line protocol, and can be used to select a node (not in the sense of a compute
-node, can also be a socket, cpu, ...) in that tree. The implementation calls
-those nodes `level` to avoid confusion. It is impossible to access data only by
-knowing the _socket_ or _cpu_ tag, all higher up levels have to be specified as
-well.
+The cc-metric-store works as a time-series database and uses the InfluxDB line
+protocol as input format. Unlike InfluxDB, the data is indexed by one single
+strictly hierarchical tree structure. A selector is build out of the tags in the
+InfluxDB line protocol, and can be used to select a node (not in the sense of a
+compute node, can also be a socket, cpu, ...) in that tree. The implementation
+calls those nodes `level` to avoid confusion. It is impossible to access data
+only by knowing the _socket_ or _cpu_ tag, all higher up levels have to be
+specified as well.
 
 This is what the hierarchy currently looks like:
 
@@ -68,6 +63,8 @@ This is what the hierarchy currently looks like:
     - cpu3
     - cpu4
     - ...
+    - gpu1
+    - gpu2
   - host2
   - ...
 - cluster2
@@ -116,7 +113,7 @@ this](https://pkg.go.dev/time#ParseDuration) (Allowed suffixes: `s`, `m`, `h`,
 There are two ways for sending data to the cc-metric-store, both of which are
 supported by the
 [cc-metric-collector](https://github.com/ClusterCockpit/cc-metric-collector).
-This example uses Nats, the alternative is to use HTTP.
+This example uses NATS, the alternative is to use HTTP.
 
 ```sh
 # Only needed once, downloads the docker image
