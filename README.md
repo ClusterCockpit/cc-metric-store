@@ -19,11 +19,27 @@ overview. The [NATS.io](https://nats.io/) based writing endpoint consumes messag
 format of the InfluxDB line
 protocol](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md).
 
+## Building
+
+`cc-metric-store` can be built using the provided `Makefile`.
+It supports the following targets:
+
+- `make`: Build the application, copy a example configuration file and generate
+  checkpoint folders if required.
+- `make clean`: Clean the golang build cache and application binary
+- `make distclean`: In addition to the clean target also remove the `./var`
+  folder
+- `make swagger`: Regenerate the Swagger files from the source comments.
+- `make test`: Run test and basic checks.
+
 ## REST API Endpoints
 
 The REST API is documented in [swagger.json](./api/swagger.json). You can
 explore and try the REST API using the integrated [SwaggerUI web
 interface](http://localhost:8082/swagger).
+
+For more information on the `cc-metric-store` REST API have a look at the
+ClusterCockpit documentation [website](https://clustercockpit.org/docs/reference/cc-metric-store/ccms-rest-api/)
 
 ## Run tests
 
@@ -78,35 +94,7 @@ Example selectors:
 
 ## Config file
 
-All durations are specified as string that will be parsed [like
-this](https://pkg.go.dev/time#ParseDuration) (Allowed suffixes: `s`, `m`, `h`,
-...).
-
-- `metrics`: Map of metric-name to objects with the following properties
-  - `frequency`: Timestep/Interval/Resolution of this metric
-  - `aggregation`: Can be `"sum"`, `"avg"` or `null`
-    - `null` means aggregation across nodes is forbidden for this metric
-    - `"sum"` means that values from the child levels are summed up for the parent level
-    - `"avg"` means that values from the child levels are averaged for the parent level
-  - `scope`: Unused at the moment, should be something like `"node"`, `"socket"` or `"hwthread"`
-- `nats`:
-  - `address`: Url of NATS.io server, example: "nats://localhost:4222"
-  - `username` and `password`: Optional, if provided use those for the connection
-  - `subscriptions`:
-    - `subscribe-to`: Where to expect the measurements to be published
-    - `cluster-tag`: Default value for the cluster tag
-- `http-api`:
-  - `address`: Address to bind to, for example `0.0.0.0:8080`
-  - `https-cert-file` and `https-key-file`: Optional, if provided enable HTTPS using those files as certificate/key
-- `jwt-public-key`: Base64 encoded string, use this to verify requests to the HTTP API
-- `retention-on-memory`: Keep all values in memory for at least that amount of time
-- `checkpoints`:
-  - `interval`: Do checkpoints every X seconds/minutes/hours
-  - `directory`: Path to a directory
-  - `restore`: After a restart, load the last X seconds/minutes/hours of data back into memory
-- `archive`:
-  - `interval`: Move and compress all checkpoints not needed anymore every X seconds/minutes/hours
-  - `directory`: Path to a directory
+You find the configuration options on the ClusterCockpit [website](https://clustercockpit.org/docs/reference/cc-metric-store/ccms-configuration/).
 
 ## Test the complete setup (excluding cc-backend itself)
 
