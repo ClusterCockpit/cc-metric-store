@@ -21,8 +21,9 @@ protocol](https://github.com/ClusterCockpit/cc-specifications/blob/master/metric
 
 ## REST API Endpoints
 
-The REST API is documented in [openapi.yaml](./api/openapi.yaml) in the OpenAPI
-3.0 format.
+The REST API is documented in [swagger.json](./api/swagger.json). You can
+explore and try the REST API using the integrated [SwaggerUI web
+interface](http://localhost:8082/swagger).
 
 ## Run tests
 
