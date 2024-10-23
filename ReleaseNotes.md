@@ -1,4 +1,4 @@
-# `cc-metric-store` version 0.0.3
+# `cc-metric-store` version 0.1.0
 
 This is a bugfix release of `cc-backend`, the API backend and frontend
 implementation of ClusterCockpit.
