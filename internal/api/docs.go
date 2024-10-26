@@ -30,7 +30,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Write metrics to store",
+                "description": "This endpoint allows the users to print the content of",
                 "produces": [
                     "application/json"
                 ],
@@ -87,6 +87,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
+                "description": "This endpoint allows the users to free the Buffers from the",
                 "produces": [
                     "application/json"
                 ],
@@ -142,7 +143,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Query metrics.",
+                "description": "This endpoint allows the users to retrieve data from the",
                 "consumes": [
                     "application/json"
                 ],
