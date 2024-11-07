@@ -166,12 +166,12 @@
         }
     },
     "checkpoints": {
-        "interval": "1h",
+        "interval": "12h",
         "directory": "./var/checkpoints",
-        "restore": "1h"
+        "restore": "48h"
     },
     "archive": {
-        "interval": "2h",
+        "interval": "50h",
         "directory": "./var/archive"
     },
     "http-api": {
@@ -179,7 +179,18 @@
         "https-cert-file": null,
         "https-key-file": null
     },
-    "retention-in-memory": "1h",
-    "nats": null,
+    "retention-in-memory": "48h",
+    "nats": [
+        {
+            "address": "nats://localhost:4222",
+            "creds-file-path": "test.creds",
+            "subscriptions": [
+                {
+                    "subscribe-to": "ee-hpc-nats",
+                    "cluster-tag": "fritz2"
+                }
+            ]
+        }
+    ],
     "jwt-public-key": "kzfYrYy+TzpanWZHJ5qSdMj5uKUWgq74BWhQG6copP0="
 }

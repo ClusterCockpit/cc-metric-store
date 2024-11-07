@@ -92,6 +92,10 @@ func ReceiveNats(conf *config.NatsConfig,
 		opts = append(opts, nats.UserInfo(conf.Username, conf.Password))
 	}
 
+	if conf.Credsfilepath != "" {
+		opts = append(opts, nats.UserCredentials(conf.Credsfilepath))
+	}
+
 	nc, err := nats.Connect(conf.Address, opts...)
 	if err != nil {
 		return err
