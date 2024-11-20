@@ -313,7 +313,20 @@ func decodeLine(dec *lineprotocol.Decoder,
 		}
 
 		if t, err = dec.Time(lineprotocol.Second, t); err != nil {
-			return fmt.Errorf("timestamp : %#v with error : %#v", lineprotocol.Second, err.Error())
+			t = time.Now()
+			if t, err = dec.Time(lineprotocol.Millisecond, t); err != nil {
+				t = time.Now()
+				if t, err = dec.Time(lineprotocol.Microsecond, t); err != nil {
+					t = time.Now()
+					if t, err = dec.Time(lineprotocol.Nanosecond, t); err != nil {
+						return fmt.Errorf("timestamp : %#v with error : %#v", t, err.Error())
+					}
+				}
+			}
+		}
+
+		if err != nil {
+			return fmt.Errorf("timestamp : %#v with error : %#v", t, err.Error())
 		}
 
 		if err := ms.WriteToLevel(lvl, selector, t.Unix(), []memorystore.Metric{metric}); err != nil {
