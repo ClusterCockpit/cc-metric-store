@@ -268,6 +268,15 @@ func (l *Level) toCheckpoint(dir string, from, to int64, m *MemoryStore) error {
 // This function can only be called once and before the very first write or read.
 // Different host's data is loaded to memory in parallel.
 func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		// The directory does not exist, so create it using os.MkdirAll()
+		err := os.MkdirAll(dir, 0755) // 0755 sets the permissions for the directory
+		if err != nil {
+			log.Fatalf("Error creating directory: %#v\n", err)
+		}
+		fmt.Printf("%#v Directory created successfully.\n", dir)
+	}
+
 	var wg sync.WaitGroup
 	work := make(chan [2]string, NumWorkers)
 	n, errs := int32(0), int32(0)
