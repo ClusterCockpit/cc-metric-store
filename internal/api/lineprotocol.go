@@ -298,7 +298,7 @@ func decodeLine(dec *lineprotocol.Decoder,
 			}
 
 			if string(key) != "value" {
-				return fmt.Errorf("unkown field: '%s' (value: %#v)", string(key), val)
+				return fmt.Errorf("host %s: unknown field: '%s' (value: %#v)", host, string(key), val)
 			}
 
 			if val.Kind() == lineprotocol.Float {
@@ -308,7 +308,7 @@ func decodeLine(dec *lineprotocol.Decoder,
 			} else if val.Kind() == lineprotocol.Uint {
 				metric.Value = util.Float(val.UintV())
 			} else {
-				return fmt.Errorf("unsupported value type in message: %s", val.Kind().String())
+				return fmt.Errorf("host %s: unsupported value type in message: %s", host, val.Kind().String())
 			}
 		}
 
@@ -319,14 +319,14 @@ func decodeLine(dec *lineprotocol.Decoder,
 				if t, err = dec.Time(lineprotocol.Microsecond, t); err != nil {
 					t = time.Now()
 					if t, err = dec.Time(lineprotocol.Nanosecond, t); err != nil {
-						return fmt.Errorf("timestamp : %#v with error : %#v", t, err.Error())
+						return fmt.Errorf("host %s: timestamp : %#v with error : %#v", host, t, err.Error())
 					}
 				}
 			}
 		}
 
 		if err != nil {
-			return fmt.Errorf("timestamp : %#v with error : %#v", t, err.Error())
+			return fmt.Errorf("host %s: timestamp : %#v with error : %#v", host, t, err.Error())
 		}
 
 		if err := ms.WriteToLevel(lvl, selector, t.Unix(), []memorystore.Metric{metric}); err != nil {
