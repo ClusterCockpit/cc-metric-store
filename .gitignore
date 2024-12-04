@@ -20,7 +20,7 @@
 
 aditya.creds
 test.creds
-config.json
+/config.json
 
 migrateTimestamps.pl
 test_ccms_api.sh
