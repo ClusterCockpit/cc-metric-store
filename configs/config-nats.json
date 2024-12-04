@@ -180,6 +180,17 @@
         "https-key-file": null
     },
     "retention-in-memory": "48h",
-    "nats": null,
+    "nats": [
+        {
+            "address": "nats://localhost:4222",
+            "creds-file-path": "test.creds",
+            "subscriptions": [
+                {
+                    "subscribe-to": "ee-hpc-nats",
+                    "cluster-tag": "fritz2"
+                }
+            ]
+        }
+    ],
     "jwt-public-key": "kzfYrYy+TzpanWZHJ5qSdMj5uKUWgq74BWhQG6copP0="
 }
