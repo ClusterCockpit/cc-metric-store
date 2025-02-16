@@ -23,8 +23,6 @@ test.creds
 /config.json
 
 migrateTimestamps.pl
-test_ccms_api.sh
-test_ccms_free_api.sh
-test_ccms_write_api.sh
+sample.txt
 sample_alex.txt
 sample_fritz.txt
