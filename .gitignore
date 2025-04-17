@@ -4,7 +4,6 @@
 *.dll
 *.so
 *.dylib
-/cc-metric-store
 
 # Test binary, built with `go test -c`
 *.test
@@ -16,6 +15,7 @@
 # vendor/
 
 # Project specific ignores
+/cc-metric-store
 /var
 
 aditya.creds

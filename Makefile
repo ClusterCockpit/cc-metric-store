@@ -1,6 +1,6 @@
 TARGET = ./cc-metric-store
 VAR = ./var/checkpoints/
-VERSION = 0.1.0
+VERSION = 0.1.1
 GIT_HASH := $(shell git rev-parse --short HEAD || echo 'development')
 CURRENT_TIME = $(shell date +"%Y-%m-%d:T%H:%M:%S")
 LD_FLAGS = '-s -X main.date=${CURRENT_TIME} -X main.version=${VERSION} -X main.commit=${GIT_HASH}'
