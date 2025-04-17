@@ -81,9 +81,10 @@ type Config struct {
 	Metrics     map[string]MetricConfig `json:"metrics"`
 	HttpConfig  *HttpConfig             `json:"http-api"`
 	Checkpoints struct {
-		Interval string `json:"interval"`
-		RootDir  string `json:"directory"`
-		Restore  string `json:"restore"`
+		FileFormat string `json:"file-format"`
+		Interval   string `json:"interval"`
+		RootDir    string `json:"directory"`
+		Restore    string `json:"restore"`
 	} `json:"checkpoints"`
 	Debug struct {
 		DumpToFile string `json:"dump-to-file"`
@@ -112,4 +113,11 @@ func Init(file string) {
 	if err := dec.Decode(&Keys); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func (c *Config) GetMetricFrequency(metricName string) (int64, error) {
+	if metric, ok := c.Metrics[metricName]; ok {
+		return metric.Frequency, nil
+	}
+	return 0, fmt.Errorf("metric %s not found", metricName)
 }

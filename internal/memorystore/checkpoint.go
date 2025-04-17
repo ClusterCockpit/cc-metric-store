@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ClusterCockpit/cc-metric-store/internal/avro"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/ClusterCockpit/cc-metric-store/internal/util"
 )
@@ -40,43 +41,78 @@ type CheckpointFile struct {
 var lastCheckpoint time.Time
 
 func Checkpointing(wg *sync.WaitGroup, ctx context.Context) {
-	lastCheckpoint = time.Now()
-	ms := GetMemoryStore()
+	if config.Keys.Checkpoints.FileFormat == "json" {
+		lastCheckpoint = time.Now()
+		ms := GetMemoryStore()
 
-	go func() {
-		defer wg.Done()
-		d, err := time.ParseDuration(config.Keys.Checkpoints.Interval)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if d <= 0 {
-			return
-		}
-
-		ticks := func() <-chan time.Time {
-			if d <= 0 {
-				return nil
+		go func() {
+			defer wg.Done()
+			d, err := time.ParseDuration(config.Keys.Checkpoints.Interval)
+			if err != nil {
+				log.Fatal(err)
 			}
-			return time.NewTicker(d).C
+			if d <= 0 {
+				return
+			}
+
+			ticks := func() <-chan time.Time {
+				if d <= 0 {
+					return nil
+				}
+				return time.NewTicker(d).C
+			}()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticks:
+					log.Printf("start checkpointing (starting at %s)...\n", lastCheckpoint.Format(time.RFC3339))
+					now := time.Now()
+					n, err := ms.ToCheckpoint(config.Keys.Checkpoints.RootDir,
+						lastCheckpoint.Unix(), now.Unix())
+					if err != nil {
+						log.Printf("checkpointing failed: %s\n", err.Error())
+					} else {
+						log.Printf("done: %d checkpoint files created\n", n)
+						lastCheckpoint = now
+					}
+				}
+			}
 		}()
-		for {
+	} else {
+		go func() {
+			defer wg.Done()
+			d, err := time.ParseDuration("1m")
+			if err != nil {
+				log.Fatal(err)
+			}
+			if d <= 0 {
+				return
+			}
+
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticks:
-				log.Printf("start checkpointing (starting at %s)...\n", lastCheckpoint.Format(time.RFC3339))
-				now := time.Now()
-				n, err := ms.ToCheckpoint(config.Keys.Checkpoints.RootDir,
-					lastCheckpoint.Unix(), now.Unix())
-				if err != nil {
-					log.Printf("checkpointing failed: %s\n", err.Error())
-				} else {
-					log.Printf("done: %d checkpoint files created\n", n)
-					lastCheckpoint = now
+			case <-time.After(time.Duration(avro.CheckpointBufferMinutes) * time.Minute):
+				// This is the first tick untill we collect the data for given minutes.
+			}
+
+			ticks := func() <-chan time.Time {
+				if d <= 0 {
+					return nil
+				}
+				return time.NewTicker(d).C
+			}()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticks:
+					// Regular ticks of 1 minute to write data.
 				}
 			}
-		}
-	}()
+		}()
+	}
 }
 
 // As `Float` implements a custom MarshalJSON() function,

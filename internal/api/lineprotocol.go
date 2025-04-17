@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ClusterCockpit/cc-metric-store/internal/avro"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/ClusterCockpit/cc-metric-store/internal/memorystore"
 	"github.com/ClusterCockpit/cc-metric-store/internal/util"
@@ -197,6 +198,8 @@ func decodeLine(dec *lineprotocol.Decoder,
 	var lvl *memorystore.Level = nil
 	prevCluster, prevHost := "", ""
 
+	var AvroBuf avro.AvroStruct
+
 	var ok bool
 	for dec.Next() {
 		rawmeasurement, err := dec.Measurement()
@@ -327,6 +330,17 @@ func decodeLine(dec *lineprotocol.Decoder,
 
 		if err != nil {
 			return fmt.Errorf("host %s: timestamp : %#v with error : %#v", host, t, err.Error())
+		}
+
+		if config.Keys.Checkpoints.FileFormat != "json" {
+			AvroBuf.MetricName = string(metricBuf)
+			AvroBuf.Cluster = cluster
+			AvroBuf.Node = host
+			AvroBuf.Selector = selector
+			AvroBuf.Value = metric.Value
+			AvroBuf.Timestamp = t.Unix()
+
+			avro.LineProtocolMessages <- AvroBuf
 		}
 
 		if err := ms.WriteToLevel(lvl, selector, t.Unix(), []memorystore.Metric{metric}); err != nil {

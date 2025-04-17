@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/ClusterCockpit/cc-metric-store/internal/api"
+	"github.com/ClusterCockpit/cc-metric-store/internal/avro"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/ClusterCockpit/cc-metric-store/internal/memorystore"
 	"github.com/ClusterCockpit/cc-metric-store/internal/runtimeEnv"
@@ -95,6 +96,7 @@ func main() {
 	memorystore.Retention(&wg, ctx)
 	memorystore.Checkpointing(&wg, ctx)
 	memorystore.Archiving(&wg, ctx)
+	avro.DataStaging(&wg, ctx)
 
 	r := http.NewServeMux()
 	api.MountRoutes(r)
