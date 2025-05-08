@@ -254,8 +254,8 @@ func decodeLine(dec *lineprotocol.Decoder,
 				}
 			case "type-id":
 				typeBuf = append(typeBuf, val...)
-			case "subtype":
-				// We cannot be sure that the "subtype" tag comes before the "stype-id" tag:
+			case "stype":
+				// We cannot be sure that the "stype" tag comes before the "stype-id" tag:
 				if len(subTypeBuf) == 0 {
 					subTypeBuf = append(subTypeBuf, val...)
 				} else {
