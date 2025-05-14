@@ -36,6 +36,18 @@ type AvroLevel struct {
 	lock     sync.RWMutex
 }
 
+type AvroField struct {
+	Name    string      `json:"name"`
+	Type    interface{} `json:"type"`
+	Default interface{} `json:"default,omitempty"`
+}
+
+type AvroSchema struct {
+	Type   string      `json:"type"`
+	Name   string      `json:"name"`
+	Fields []AvroField `json:"fields"`
+}
+
 func (l *AvroLevel) findAvroLevelOrCreate(selector []string) *AvroLevel {
 	if len(selector) == 0 {
 		return l
@@ -82,28 +94,42 @@ func (l *AvroLevel) findAvroLevelOrCreate(selector []string) *AvroLevel {
 	return child.findAvroLevelOrCreate(selector[1:])
 }
 
-func (l *AvroLevel) addMetric(metricName string, value util.Float, timestamp int64) {
+func (l *AvroLevel) addMetric(metricName string, value util.Float, timestamp int64, Freq int) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	// Create a key value for the first time
-	if len(l.data) == 0 {
-		l.data[timestamp] = make(map[string]util.Float, 0)
-		l.data[timestamp][metricName] = value
-		fmt.Printf("Creating new timestamp because no data exists\n")
+	KeyCounter := int(CheckpointBufferMinutes * 60 / Freq)
+
+	// Create keys in advance for the given amount of time
+	if len(l.data) != KeyCounter {
+		if len(l.data) == 0 {
+			for i := range KeyCounter {
+				l.data[timestamp+int64(i*Freq)] = make(map[string]util.Float, 0)
+			}
+		} else {
+			//Get the last timestamp
+			var lastTs int64
+			for ts := range l.data {
+				if ts > lastTs {
+					lastTs = ts
+				}
+			}
+			// Create keys for the next KeyCounter timestamps
+			l.data[lastTs+int64(Freq)] = make(map[string]util.Float, 0)
+		}
+		fmt.Printf("Creating timestamp keys to store key-value\n")
 	}
 
 	// Iterate over timestamps and choose the one which is within range.
 	// Since its epoch time, we check if the difference is less than 60 seconds.
 	for ts := range l.data {
-		if (ts - timestamp) < 60 {
+		if (ts - timestamp) < int64(Freq) {
 			l.data[ts][metricName] = value
 			return
 		}
 	}
+}
 
-	// Create a new timestamp if none is found
-	l.data[timestamp] = make(map[string]util.Float, 0)
-	l.data[timestamp][metricName] = value
-
+func GetAvroStore() *AvroStore {
+	return &avroStore
 }

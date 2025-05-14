@@ -41,8 +41,9 @@ type CheckpointFile struct {
 var lastCheckpoint time.Time
 
 func Checkpointing(wg *sync.WaitGroup, ctx context.Context) {
+	lastCheckpoint = time.Now()
+
 	if config.Keys.Checkpoints.FileFormat == "json" {
-		lastCheckpoint = time.Now()
 		ms := GetMemoryStore()
 
 		go func() {
@@ -82,11 +83,13 @@ func Checkpointing(wg *sync.WaitGroup, ctx context.Context) {
 	} else {
 		go func() {
 			defer wg.Done()
-			d, err := time.ParseDuration("1m")
+			d, _ := time.ParseDuration("1m")
+
+			d_cp, err := time.ParseDuration(config.Keys.Checkpoints.Interval)
 			if err != nil {
 				log.Fatal(err)
 			}
-			if d <= 0 {
+			if d_cp <= 0 {
 				return
 			}
 
@@ -95,6 +98,7 @@ func Checkpointing(wg *sync.WaitGroup, ctx context.Context) {
 				return
 			case <-time.After(time.Duration(avro.CheckpointBufferMinutes) * time.Minute):
 				// This is the first tick untill we collect the data for given minutes.
+				avro.GetAvroStore().ToCheckpoint(config.Keys.Checkpoints.RootDir)
 			}
 
 			ticks := func() <-chan time.Time {
@@ -103,12 +107,23 @@ func Checkpointing(wg *sync.WaitGroup, ctx context.Context) {
 				}
 				return time.NewTicker(d).C
 			}()
+
+			ticks_cp := func() <-chan time.Time {
+				if d_cp <= 0 {
+					return nil
+				}
+				return time.NewTicker(d_cp).C
+			}()
+
 			for {
 				select {
 				case <-ctx.Done():
 					return
+				case <-ticks_cp:
+					lastCheckpoint = time.Now()
 				case <-ticks:
 					// Regular ticks of 1 minute to write data.
+					avro.GetAvroStore().ToCheckpoint(config.Keys.Checkpoints.RootDir)
 				}
 			}
 		}()

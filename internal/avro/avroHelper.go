@@ -34,6 +34,18 @@ func DataStaging(wg *sync.WaitGroup, ctx context.Context) {
 					continue
 				}
 
+				metricName := ""
+
+				for i, name := range val.Selector {
+					if i == 0 {
+						metricName += name
+					} else {
+						metricName += "_" + name
+					}
+				}
+
+				metricName += val.MetricName
+
 				// Create a new selector for the Avro level
 				// The selector is a slice of strings that represents the path to the
 				// Avro level. It is created by appending the cluster, node, and metric
@@ -52,7 +64,7 @@ func DataStaging(wg *sync.WaitGroup, ctx context.Context) {
 					copy(oldSelector, selector)
 				}
 
-				avroLevel.addMetric(val.MetricName, val.Value, val.Timestamp)
+				avroLevel.addMetric(metricName, val.Value, val.Timestamp, int(freq))
 			}
 		}
 	}()
