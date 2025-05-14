@@ -134,9 +134,9 @@ func main() {
 			MinVersion:               tls.VersionTLS12,
 			PreferServerCipherSuites: true,
 		})
-		fmt.Printf("HTTPS server listening at %s...", config.Keys.HttpConfig.Address)
+		fmt.Printf("HTTPS server listening at %s...\n", config.Keys.HttpConfig.Address)
 	} else {
-		fmt.Printf("HTTP server listening at %s...", config.Keys.HttpConfig.Address)
+		fmt.Printf("HTTP server listening at %s...\n", config.Keys.HttpConfig.Address)
 	}
 
 	wg.Add(1)

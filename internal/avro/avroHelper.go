@@ -36,12 +36,8 @@ func DataStaging(wg *sync.WaitGroup, ctx context.Context) {
 
 				metricName := ""
 
-				for i, name := range val.Selector {
-					if i == 0 {
-						metricName += name
-					} else {
-						metricName += "_" + name
-					}
+				for _, selector_name := range val.Selector {
+					metricName += selector_name + "_"
 				}
 
 				metricName += val.MetricName

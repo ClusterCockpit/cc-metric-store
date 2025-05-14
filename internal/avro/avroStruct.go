@@ -1,7 +1,6 @@
 package avro
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/ClusterCockpit/cc-metric-store/internal/util"
@@ -117,7 +116,6 @@ func (l *AvroLevel) addMetric(metricName string, value util.Float, timestamp int
 			// Create keys for the next KeyCounter timestamps
 			l.data[lastTs+int64(Freq)] = make(map[string]util.Float, 0)
 		}
-		fmt.Printf("Creating timestamp keys to store key-value\n")
 	}
 
 	// Iterate over timestamps and choose the one which is within range.

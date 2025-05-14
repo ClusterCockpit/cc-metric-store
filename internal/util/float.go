@@ -28,6 +28,10 @@ func (f Float) MarshalJSON() ([]byte, error) {
 	return strconv.AppendFloat(make([]byte, 0, 10), float64(f), 'f', 3, 64), nil
 }
 
+func (f Float) Double() float64 {
+	return float64(f)
+}
+
 func (f *Float) UnmarshalJSON(input []byte) error {
 	if string(input) == "null" {
 		*f = NaN
