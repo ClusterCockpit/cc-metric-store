@@ -121,9 +121,13 @@ func (l *AvroLevel) addMetric(metricName string, value util.Float, timestamp int
 	// Iterate over timestamps and choose the one which is within range.
 	// Since its epoch time, we check if the difference is less than 60 seconds.
 	for ts := range l.data {
+		if _, ok := l.data[ts][metricName]; ok {
+			// If the metric is already present, we can skip it
+			continue
+		}
 		if (ts - timestamp) < int64(Freq) {
 			l.data[ts][metricName] = value
-			return
+			break
 		}
 	}
 }

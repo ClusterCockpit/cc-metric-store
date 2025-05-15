@@ -96,10 +96,12 @@ func (as *AvroStore) ToCheckpoint(dir string) (int, error) {
 
 // getTimestamp returns the timestamp from the directory name
 func getTimestamp(dir string) int64 {
-	// Extract the timestamp from the directory name
+	// Extract the resolution and timestamp from the directory name
 	// The existing avro file will be in epoch timestamp format
 	// iterate over all the files in the directory and find the maximum timestamp
 	// and return it
+
+	resolution := path.Base(dir)
 	dir = path.Dir(dir)
 
 	files, err := os.ReadDir(dir)
@@ -117,9 +119,11 @@ func getTimestamp(dir string) int64 {
 			continue
 		}
 		name := file.Name()
-		if len(name) < 5 {
+
+		if len(name) < 5 || !strings.HasSuffix(name, ".avro") || !strings.HasPrefix(name, resolution+"_") {
 			continue
 		}
+
 		ts, err := strconv.ParseInt(name[strings.Index(name, "_")+1:len(name)-5], 10, 64)
 		if err != nil {
 			fmt.Printf("error while parsing timestamp: %s\n", err.Error())
@@ -134,7 +138,7 @@ func getTimestamp(dir string) int64 {
 	interval, _ := time.ParseDuration(config.Keys.Checkpoints.Interval)
 	updateTime := time.Now().Add(-interval).Unix()
 
-	if maxTs > updateTime {
+	if maxTs < updateTime {
 		return 0
 	}
 
@@ -142,6 +146,8 @@ func getTimestamp(dir string) int64 {
 }
 
 func (l *AvroLevel) toCheckpoint(dir string, from int64) error {
+	l.lock.Lock()
+	defer l.lock.Unlock()
 
 	fmt.Printf("Checkpointing directory: %s\n", dir)
 
@@ -171,11 +177,12 @@ func (l *AvroLevel) toCheckpoint(dir string, from int64) error {
 
 	if _, err := os.Stat(filePath); errors.Is(err, os.ErrNotExist) {
 		err = os.MkdirAll(path.Dir(dir), 0o755)
-		if err == nil {
-			f, err = os.OpenFile(filePath, os.O_CREATE|os.O_RDWR, 0o644)
-			if err != nil {
-				return fmt.Errorf("failed to create new avro file: %v", err)
-			}
+		if err != nil {
+			return fmt.Errorf("failed to create directory: %v", err)
+			// f, err = os.OpenFile(filePath, os.O_CREATE|os.O_RDWR, 0o644)
+			// if err != nil {
+			// 	return fmt.Errorf("failed to create new avro file: %v", err)
+			// }
 		}
 	} else if fp_, err := os.Stat(filePath); fp_.Size() != 0 || errors.Is(err, os.ErrNotExist) {
 		f, err = os.Open(filePath)
@@ -191,24 +198,36 @@ func (l *AvroLevel) toCheckpoint(dir string, from int64) error {
 
 		f.Close()
 
-		f, err = os.OpenFile(filePath, os.O_APPEND|os.O_RDWR, 0o644)
-		if err != nil {
-			return fmt.Errorf("failed to create file: %v", err)
-		}
-	} else {
-		f, err = os.OpenFile(filePath, os.O_APPEND|os.O_RDWR, 0o644)
-		if err != nil {
-			return fmt.Errorf("failed to append new avro file: %v", err)
-		}
+		// f, err = os.OpenFile(filePath, os.O_APPEND|os.O_RDWR, 0o644)
+		// if err != nil {
+		// 	return fmt.Errorf("failed to create file: %v", err)
+		// }
+	}
+	f, err := os.OpenFile(filePath, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o644)
+	if err != nil {
+		return fmt.Errorf("failed to append new avro file: %v", err)
 	}
 	defer f.Close()
 
 	time_ref := time.Now().Add(time.Duration(-CheckpointBufferMinutes+1) * time.Minute).Unix()
 
-	for ts := range l.data {
+	if len(l.data) == 0 {
+		fmt.Printf("no data in the pool\n")
+		// filepath contains the resolution
+		int_res, _ := strconv.Atoi(path.Base(dir))
 
+		// we checkpoint avro files every 60 seconds
+		repeat := 60 / int_res
+
+		for range repeat {
+			record_list = append(record_list, make(map[string]interface{}))
+		}
+	}
+
+	for ts := range l.data {
 		if ts < time_ref {
 			data := l.data[ts]
+
 			schema_gen, err := generateSchema(data)
 
 			if err != nil {
