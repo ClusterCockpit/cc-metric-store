@@ -91,7 +91,7 @@ func main() {
 	ctx, shutdown := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 
 	memorystore.Retention(&wg, ctx)
 	memorystore.Checkpointing(&wg, ctx)

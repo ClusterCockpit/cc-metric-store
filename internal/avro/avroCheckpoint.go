@@ -23,7 +23,7 @@ var NumWorkers int = 4
 
 var ErrNoNewData error = errors.New("no data in the pool")
 
-func (as *AvroStore) ToCheckpoint(dir string) (int, error) {
+func (as *AvroStore) ToCheckpoint(dir string, dumpAll bool) (int, error) {
 	levels := make([]*AvroLevel, 0)
 	selectors := make([][]string, 0)
 	as.root.lock.RLock()
@@ -62,7 +62,7 @@ func (as *AvroStore) ToCheckpoint(dir string) (int, error) {
 			for workItem := range work {
 				var from int64 = getTimestamp(workItem.dir)
 
-				if err := workItem.level.toCheckpoint(workItem.dir, from); err != nil {
+				if err := workItem.level.toCheckpoint(workItem.dir, from, dumpAll); err != nil {
 					if err == ErrNoNewData {
 						continue
 					}
@@ -145,7 +145,7 @@ func getTimestamp(dir string) int64 {
 	return maxTs
 }
 
-func (l *AvroLevel) toCheckpoint(dir string, from int64) error {
+func (l *AvroLevel) toCheckpoint(dir string, from int64, dumpAll bool) error {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
@@ -179,10 +179,6 @@ func (l *AvroLevel) toCheckpoint(dir string, from int64) error {
 		err = os.MkdirAll(path.Dir(dir), 0o755)
 		if err != nil {
 			return fmt.Errorf("failed to create directory: %v", err)
-			// f, err = os.OpenFile(filePath, os.O_CREATE|os.O_RDWR, 0o644)
-			// if err != nil {
-			// 	return fmt.Errorf("failed to create new avro file: %v", err)
-			// }
 		}
 	} else if fp_, err := os.Stat(filePath); fp_.Size() != 0 || errors.Is(err, os.ErrNotExist) {
 		f, err = os.Open(filePath)
@@ -197,11 +193,6 @@ func (l *AvroLevel) toCheckpoint(dir string, from int64) error {
 		schema = codec.Schema()
 
 		f.Close()
-
-		// f, err = os.OpenFile(filePath, os.O_APPEND|os.O_RDWR, 0o644)
-		// if err != nil {
-		// 	return fmt.Errorf("failed to create file: %v", err)
-		// }
 	}
 	f, err := os.OpenFile(filePath, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o644)
 	if err != nil {
@@ -211,8 +202,11 @@ func (l *AvroLevel) toCheckpoint(dir string, from int64) error {
 
 	time_ref := time.Now().Add(time.Duration(-CheckpointBufferMinutes+1) * time.Minute).Unix()
 
+	if dumpAll {
+		time_ref = time.Now().Unix()
+	}
+
 	if len(l.data) == 0 {
-		fmt.Printf("no data in the pool\n")
 		// filepath contains the resolution
 		int_res, _ := strconv.Atoi(path.Base(dir))
 

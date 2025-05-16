@@ -11,12 +11,13 @@ import (
 
 func DataStaging(wg *sync.WaitGroup, ctx context.Context) {
 
-	if config.Keys.Checkpoints.FileFormat == "json" {
-		wg.Done()
-	}
-
 	// AvroPool is a pool of Avro writers.
 	go func() {
+		if config.Keys.Checkpoints.FileFormat == "json" {
+			wg.Done() // Mark this goroutine as done
+			return    // Exit the goroutine
+		}
+
 		defer wg.Done()
 
 		var avroLevel *AvroLevel

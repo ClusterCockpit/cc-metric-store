@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ClusterCockpit/cc-metric-store/internal/avro"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/ClusterCockpit/cc-metric-store/internal/util"
 	"github.com/ClusterCockpit/cc-metric-store/pkg/resampler"
@@ -76,13 +77,22 @@ func GetMemoryStore() *MemoryStore {
 }
 
 func Shutdown() {
-	ms := GetMemoryStore()
 	log.Printf("Writing to '%s'...\n", config.Keys.Checkpoints.RootDir)
-	files, err := ms.ToCheckpoint(config.Keys.Checkpoints.RootDir, lastCheckpoint.Unix(), time.Now().Unix())
+	var files int
+	var err error
+
+	if config.Keys.Checkpoints.FileFormat == "json" {
+		ms := GetMemoryStore()
+		files, err = ms.ToCheckpoint(config.Keys.Checkpoints.RootDir, lastCheckpoint.Unix(), time.Now().Unix())
+	} else {
+		files, err = avro.GetAvroStore().ToCheckpoint(config.Keys.Checkpoints.RootDir, true)
+	}
+
 	if err != nil {
 		log.Printf("Writing checkpoint failed: %s\n", err.Error())
 	}
 	log.Printf("Done! (%d files written)\n", files)
+
 }
 
 func Retention(wg *sync.WaitGroup, ctx context.Context) {

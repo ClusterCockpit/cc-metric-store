@@ -85,20 +85,12 @@ func Checkpointing(wg *sync.WaitGroup, ctx context.Context) {
 			defer wg.Done()
 			d, _ := time.ParseDuration("1m")
 
-			d_cp, err := time.ParseDuration(config.Keys.Checkpoints.Interval)
-			if err != nil {
-				log.Fatal(err)
-			}
-			if d_cp <= 0 {
-				return
-			}
-
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(time.Duration(avro.CheckpointBufferMinutes) * time.Minute):
 				// This is the first tick untill we collect the data for given minutes.
-				avro.GetAvroStore().ToCheckpoint(config.Keys.Checkpoints.RootDir)
+				avro.GetAvroStore().ToCheckpoint(config.Keys.Checkpoints.RootDir, false)
 			}
 
 			ticks := func() <-chan time.Time {
@@ -108,22 +100,13 @@ func Checkpointing(wg *sync.WaitGroup, ctx context.Context) {
 				return time.NewTicker(d).C
 			}()
 
-			ticks_cp := func() <-chan time.Time {
-				if d_cp <= 0 {
-					return nil
-				}
-				return time.NewTicker(d_cp).C
-			}()
-
 			for {
 				select {
 				case <-ctx.Done():
 					return
-				case <-ticks_cp:
-					lastCheckpoint = time.Now()
 				case <-ticks:
 					// Regular ticks of 1 minute to write data.
-					avro.GetAvroStore().ToCheckpoint(config.Keys.Checkpoints.RootDir)
+					avro.GetAvroStore().ToCheckpoint(config.Keys.Checkpoints.RootDir, false)
 				}
 			}
 		}()
