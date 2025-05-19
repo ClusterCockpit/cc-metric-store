@@ -49,6 +49,14 @@ func (f *Float) UnmarshalJSON(input []byte) error {
 // Same as `[]Float`, but can be marshaled to JSON with less allocations.
 type FloatArray []Float
 
+func ConvertToFloat(input float64) Float {
+	if input == -1.0 {
+		return NaN
+	} else {
+		return Float(input)
+	}
+}
+
 func (fa FloatArray) MarshalJSON() ([]byte, error) {
 	buf := make([]byte, 0, 2+len(fa)*8)
 	buf = append(buf, '[')

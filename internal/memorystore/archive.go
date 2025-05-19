@@ -122,7 +122,8 @@ func archiveCheckpoints(dir string, archiveDir string, from int64, deleteInstead
 		return 0, err
 	}
 
-	files, err := findFiles(entries, from, false)
+	extension := config.Keys.Checkpoints.FileFormat
+	files, err := findFiles(entries, from, extension, false)
 	if err != nil {
 		return 0, err
 	}

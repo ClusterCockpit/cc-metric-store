@@ -38,7 +38,7 @@ func DataStaging(wg *sync.WaitGroup, ctx context.Context) {
 				metricName := ""
 
 				for _, selector_name := range val.Selector {
-					metricName += selector_name + "_"
+					metricName += selector_name + Delimiter
 				}
 
 				metricName += val.MetricName

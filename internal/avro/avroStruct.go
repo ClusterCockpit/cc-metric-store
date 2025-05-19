@@ -7,7 +7,7 @@ import (
 )
 
 var LineProtocolMessages = make(chan AvroStruct)
-
+var Delimiter = "ZZZZZ"
 var AvroCounter = 0
 
 // CheckpointBufferMinutes should always be in minutes.

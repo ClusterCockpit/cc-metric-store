@@ -22,6 +22,7 @@ import (
 	"github.com/ClusterCockpit/cc-metric-store/internal/avro"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/ClusterCockpit/cc-metric-store/internal/util"
+	"github.com/linkedin/goavro/v2"
 )
 
 // Whenever changed, update MarshalJSON as well!
@@ -91,6 +92,8 @@ func Checkpointing(wg *sync.WaitGroup, ctx context.Context) {
 			case <-time.After(time.Duration(avro.CheckpointBufferMinutes) * time.Minute):
 				// This is the first tick untill we collect the data for given minutes.
 				avro.GetAvroStore().ToCheckpoint(config.Keys.Checkpoints.RootDir, false)
+				// log.Printf("Checkpointing %d avro files", count)
+
 			}
 
 			ticks := func() <-chan time.Time {
@@ -107,6 +110,7 @@ func Checkpointing(wg *sync.WaitGroup, ctx context.Context) {
 				case <-ticks:
 					// Regular ticks of 1 minute to write data.
 					avro.GetAvroStore().ToCheckpoint(config.Keys.Checkpoints.RootDir, false)
+					// log.Printf("Checkpointing %d avro files", count)
 				}
 			}
 		}()
@@ -298,19 +302,7 @@ func (l *Level) toCheckpoint(dir string, from, to int64, m *MemoryStore) error {
 	return bw.Flush()
 }
 
-// Metrics stored at the lowest 2 levels are not loaded (root and cluster)!
-// This function can only be called once and before the very first write or read.
-// Different host's data is loaded to memory in parallel.
-func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		// The directory does not exist, so create it using os.MkdirAll()
-		err := os.MkdirAll(dir, 0755) // 0755 sets the permissions for the directory
-		if err != nil {
-			log.Fatalf("Error creating directory: %#v\n", err)
-		}
-		fmt.Printf("%#v Directory created successfully.\n", dir)
-	}
-
+func (m *MemoryStore) FromCheckpoint(dir string, from int64, extension string) (int, error) {
 	var wg sync.WaitGroup
 	work := make(chan [2]string, NumWorkers)
 	n, errs := int32(0), int32(0)
@@ -321,7 +313,7 @@ func (m *MemoryStore) FromCheckpoint(dir string, from int64) (int, error) {
 			defer wg.Done()
 			for host := range work {
 				lvl := m.root.findLevelOrCreate(host[:], len(m.Metrics))
-				nn, err := lvl.fromCheckpoint(filepath.Join(dir, host[0], host[1]), from, m)
+				nn, err := lvl.fromCheckpoint(m, filepath.Join(dir, host[0], host[1]), from, extension)
 				if err != nil {
 					log.Fatalf("error while loading checkpoints: %s", err.Error())
 					atomic.AddInt32(&errs, 1)
@@ -376,6 +368,211 @@ done:
 		return int(n), fmt.Errorf("%d errors happend while creating checkpoints (%d successes)", errs, n)
 	}
 	return int(n), nil
+}
+
+// Metrics stored at the lowest 2 levels are not loaded (root and cluster)!
+// This function can only be called once and before the very first write or read.
+// Different host's data is loaded to memory in parallel.
+func (m *MemoryStore) FromCheckpointFiles(dir string, from int64) (int, error) {
+
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		// The directory does not exist, so create it using os.MkdirAll()
+		err := os.MkdirAll(dir, 0755) // 0755 sets the permissions for the directory
+		if err != nil {
+			log.Fatalf("Error creating directory: %#v\n", err)
+		}
+		fmt.Printf("%#v Directory created successfully.\n", dir)
+	}
+
+	// Config read (replace with your actual config read)
+	fileFormat := config.Keys.Checkpoints.FileFormat
+
+	// Map to easily get the fallback format
+	oppositeFormat := map[string]string{
+		"json": "avro",
+		"avro": "json",
+	}
+
+	// First, attempt to load the specified format
+	if found, err := checkFilesWithExtension(dir, fileFormat); err != nil {
+		return 0, fmt.Errorf("error checking files with extension: %v", err)
+	} else if found {
+		log.Printf("Loading %s files because fileformat is %s\n", fileFormat, fileFormat)
+		return m.FromCheckpoint(dir, from, fileFormat)
+	}
+
+	// If not found, attempt the opposite format
+	altFormat := oppositeFormat[fileFormat]
+	if found, err := checkFilesWithExtension(dir, altFormat); err != nil {
+		return 0, fmt.Errorf("error checking files with extension: %v", err)
+	} else if found {
+		log.Printf("Loading %s files but fileformat is %s\n", altFormat, fileFormat)
+		return m.FromCheckpoint(dir, from, altFormat)
+	}
+
+	log.Println("No valid checkpoint files found in the directory.")
+	return 0, nil
+}
+
+func checkFilesWithExtension(dir string, extension string) (bool, error) {
+	found := false
+
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return fmt.Errorf("error accessing path %s: %v", path, err)
+		}
+		if !info.IsDir() && filepath.Ext(info.Name()) == "."+extension {
+			found = true
+			return nil
+		}
+		return nil
+	})
+
+	if err != nil {
+		return false, fmt.Errorf("error walking through directories: %s", err)
+	}
+
+	return found, nil
+}
+
+func (l *Level) loadAvroFile(m *MemoryStore, f *os.File, from int64) error {
+	br := bufio.NewReader(f)
+
+	fileName := f.Name()[strings.LastIndex(f.Name(), "/")+1:]
+
+	resolution, err := strconv.ParseInt(fileName[0:strings.Index(fileName, "_")], 10, 64)
+	if err != nil {
+		return fmt.Errorf("error while reading avro file (resolution parsing) : %s", err)
+	}
+
+	// fmt.Printf("File : %s with resolution : %d\n", fileName, resolution)
+
+	var recordCounter int64 = 0
+
+	// Create a new OCF reader from the buffered reader
+	ocfReader, err := goavro.NewOCFReader(br)
+	if err != nil {
+		panic(err)
+	}
+
+	metricsData := make(map[string]util.FloatArray)
+
+	for ocfReader.Scan() {
+		datum, err := ocfReader.Read()
+		if err != nil {
+			return fmt.Errorf("error while reading avro file : %s", err)
+		}
+
+		record, ok := datum.(map[string]interface{})
+		if !ok {
+			panic("failed to assert datum as map[string]interface{}")
+		}
+
+		for key, value := range record {
+			metricsData[key] = append(metricsData[key], util.ConvertToFloat(value.(float64)))
+		}
+
+		recordCounter += 1
+	}
+
+	to := (from + (recordCounter / (60 / resolution) * 60))
+	if to < from {
+		return nil
+	}
+
+	for key, floatArray := range metricsData {
+		metricName := avro.ReplaceKey(key)
+
+		if strings.Contains(metricName, avro.Delimiter) {
+			subString := strings.Split(metricName, avro.Delimiter)
+
+			lvl := l
+
+			for i := 0; i < len(subString)-1; i++ {
+
+				sel := subString[i]
+
+				if lvl.children == nil {
+					lvl.children = make(map[string]*Level)
+				}
+
+				child, ok := lvl.children[sel]
+				if !ok {
+					child = &Level{
+						metrics:  make([]*buffer, len(m.Metrics)),
+						children: nil,
+					}
+					lvl.children[sel] = child
+				}
+				lvl = child
+			}
+
+			leafMetricName := subString[len(subString)-1]
+			err = lvl.createBuffer(m, leafMetricName, floatArray, from, resolution)
+			if err != nil {
+				return fmt.Errorf("error while creating buffers from avroReader : %s", err)
+			}
+		} else {
+			err = l.createBuffer(m, metricName, floatArray, from, resolution)
+			if err != nil {
+				return fmt.Errorf("error while creating buffers from avroReader : %s", err)
+			}
+		}
+
+	}
+
+	return nil
+}
+
+func (l *Level) createBuffer(m *MemoryStore, metricName string, floatArray util.FloatArray, from int64, resolution int64) error {
+	b := &buffer{
+		frequency: resolution,
+		start:     from,
+		data:      floatArray,
+		prev:      nil,
+		next:      nil,
+		archived:  true,
+	}
+	b.close()
+
+	minfo, ok := m.Metrics[metricName]
+	if !ok {
+		return nil
+		// return errors.New("Unkown metric: " + name)
+	}
+
+	prev := l.metrics[minfo.Offset]
+	if prev == nil {
+		l.metrics[minfo.Offset] = b
+	} else {
+		if prev.start > b.start {
+			return errors.New("wooops")
+		}
+
+		b.prev = prev
+		prev.next = b
+	}
+	l.metrics[minfo.Offset] = b
+
+	return nil
+}
+
+func (l *Level) loadJsonFile(m *MemoryStore, f *os.File, from int64) error {
+	br := bufio.NewReader(f)
+	cf := &CheckpointFile{}
+	if err := json.NewDecoder(br).Decode(cf); err != nil {
+		return err
+	}
+
+	if cf.To != 0 && cf.To < from {
+		return nil
+	}
+
+	if err := l.loadFile(cf, m); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (l *Level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
@@ -433,7 +630,7 @@ func (l *Level) loadFile(cf *CheckpointFile, m *MemoryStore) error {
 	return nil
 }
 
-func (l *Level) fromCheckpoint(dir string, from int64, m *MemoryStore) (int, error) {
+func (l *Level) fromCheckpoint(m *MemoryStore, dir string, from int64, extension string) (int, error) {
 	direntries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -443,7 +640,7 @@ func (l *Level) fromCheckpoint(dir string, from int64, m *MemoryStore) (int, err
 		return 0, err
 	}
 
-	jsonFiles := make([]fs.DirEntry, 0)
+	allFiles := make([]fs.DirEntry, 0)
 	filesLoaded := 0
 	for _, e := range direntries {
 		if e.IsDir() {
@@ -452,24 +649,31 @@ func (l *Level) fromCheckpoint(dir string, from int64, m *MemoryStore) (int, err
 				children: make(map[string]*Level),
 			}
 
-			files, err := child.fromCheckpoint(path.Join(dir, e.Name()), from, m)
+			files, err := child.fromCheckpoint(m, path.Join(dir, e.Name()), from, extension)
 			filesLoaded += files
 			if err != nil {
 				return filesLoaded, err
 			}
 
 			l.children[e.Name()] = child
-		} else if strings.HasSuffix(e.Name(), ".json") {
-			jsonFiles = append(jsonFiles, e)
+		} else if strings.HasSuffix(e.Name(), "."+extension) {
+			allFiles = append(allFiles, e)
 		} else {
-			return filesLoaded, errors.New("unexpected file: " + dir + "/" + e.Name())
+			continue
 		}
 	}
 
-	files, err := findFiles(jsonFiles, from, true)
+	files, err := findFiles(allFiles, from, extension, true)
 	if err != nil {
 		return filesLoaded, err
 	}
+
+	loaders := map[string]func(*MemoryStore, *os.File, int64) error{
+		"json": l.loadJsonFile,
+		"avro": l.loadAvroFile,
+	}
+
+	loader := loaders[extension]
 
 	for _, filename := range files {
 		f, err := os.Open(path.Join(dir, filename))
@@ -478,17 +682,7 @@ func (l *Level) fromCheckpoint(dir string, from int64, m *MemoryStore) (int, err
 		}
 		defer f.Close()
 
-		br := bufio.NewReader(f)
-		cf := &CheckpointFile{}
-		if err = json.NewDecoder(br).Decode(cf); err != nil {
-			return filesLoaded, err
-		}
-
-		if cf.To != 0 && cf.To < from {
-			continue
-		}
-
-		if err = l.loadFile(cf, m); err != nil {
+		if err = loader(m, f, from); err != nil {
 			return filesLoaded, err
 		}
 
@@ -501,10 +695,14 @@ func (l *Level) fromCheckpoint(dir string, from int64, m *MemoryStore) (int, err
 // This will probably get very slow over time!
 // A solution could be some sort of an index file in which all other files
 // and the timespan they contain is listed.
-func findFiles(direntries []fs.DirEntry, t int64, findMoreRecentFiles bool) ([]string, error) {
+func findFiles(direntries []fs.DirEntry, t int64, extension string, findMoreRecentFiles bool) ([]string, error) {
 	nums := map[string]int64{}
 	for _, e := range direntries {
-		ts, err := strconv.ParseInt(strings.TrimSuffix(e.Name(), ".json"), 10, 64)
+		if !strings.HasSuffix(e.Name(), "."+extension) {
+			continue
+		}
+
+		ts, err := strconv.ParseInt(e.Name()[strings.Index(e.Name(), "_")+1:len(e.Name())-5], 10, 64)
 		if err != nil {
 			return nil, err
 		}

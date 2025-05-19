@@ -69,7 +69,7 @@ func main() {
 
 	restoreFrom := startupTime.Add(-d)
 	log.Printf("Loading checkpoints newer than %s\n", restoreFrom.Format(time.RFC3339))
-	files, err := ms.FromCheckpoint(config.Keys.Checkpoints.RootDir, restoreFrom.Unix())
+	files, err := ms.FromCheckpointFiles(config.Keys.Checkpoints.RootDir, restoreFrom.Unix())
 	loadedData := ms.SizeInBytes() / 1024 / 1024 // In MB
 	if err != nil {
 		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
