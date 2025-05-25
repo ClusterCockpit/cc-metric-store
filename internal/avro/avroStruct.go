@@ -6,9 +6,8 @@ import (
 	"github.com/ClusterCockpit/cc-metric-store/internal/util"
 )
 
-var LineProtocolMessages = make(chan AvroStruct)
+var LineProtocolMessages = make(chan *AvroStruct)
 var Delimiter = "ZZZZZ"
-var AvroCounter = 0
 
 // CheckpointBufferMinutes should always be in minutes.
 // Its controls the amount of data to hold for given amount of time.
@@ -120,13 +119,13 @@ func (l *AvroLevel) addMetric(metricName string, value util.Float, timestamp int
 
 	// Iterate over timestamps and choose the one which is within range.
 	// Since its epoch time, we check if the difference is less than 60 seconds.
-	for ts := range l.data {
-		if _, ok := l.data[ts][metricName]; ok {
+	for ts, dat := range l.data {
+		if _, ok := dat[metricName]; ok {
 			// If the metric is already present, we can skip it
 			continue
 		}
-		if (ts - timestamp) < int64(Freq) {
-			l.data[ts][metricName] = value
+		if Abs(ts-timestamp) < int64(Freq) {
+			dat[metricName] = value
 			break
 		}
 	}
@@ -134,4 +133,12 @@ func (l *AvroLevel) addMetric(metricName string, value util.Float, timestamp int
 
 func GetAvroStore() *AvroStore {
 	return &avroStore
+}
+
+// Abs returns the absolute value of x.
+func Abs(x int64) int64 {
+	if x < 0 {
+		return -x
+	}
+	return x
 }

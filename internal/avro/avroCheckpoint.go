@@ -137,7 +137,7 @@ func getTimestamp(dir string) int64 {
 	}
 
 	interval, _ := time.ParseDuration(config.Keys.Checkpoints.Interval)
-	updateTime := time.Now().Add(-interval).Unix()
+	updateTime := time.Now().Add(-interval - time.Duration(CheckpointBufferMinutes) + 1).Unix()
 
 	if maxTs < updateTime {
 		return 0

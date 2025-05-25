@@ -198,8 +198,6 @@ func decodeLine(dec *lineprotocol.Decoder,
 	var lvl *memorystore.Level = nil
 	prevCluster, prevHost := "", ""
 
-	var AvroBuf avro.AvroStruct
-
 	var ok bool
 	for dec.Next() {
 		rawmeasurement, err := dec.Measurement()
@@ -333,14 +331,13 @@ func decodeLine(dec *lineprotocol.Decoder,
 		}
 
 		if config.Keys.Checkpoints.FileFormat != "json" {
-			AvroBuf.MetricName = string(metricBuf)
-			AvroBuf.Cluster = cluster
-			AvroBuf.Node = host
-			AvroBuf.Selector = selector
-			AvroBuf.Value = metric.Value
-			AvroBuf.Timestamp = t.Unix()
-
-			avro.LineProtocolMessages <- AvroBuf
+			avro.LineProtocolMessages <- &avro.AvroStruct{
+				MetricName: string(metricBuf),
+				Cluster:    cluster,
+				Node:       host,
+				Selector:   append([]string{}, selector...),
+				Value:      metric.Value,
+				Timestamp:  t.Unix()}
 		}
 
 		if err := ms.WriteToLevel(lvl, selector, t.Unix(), []memorystore.Metric{metric}); err != nil {

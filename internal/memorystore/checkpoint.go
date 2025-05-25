@@ -439,6 +439,10 @@ func (l *Level) loadAvroFile(m *MemoryStore, f *os.File, from int64) error {
 	br := bufio.NewReader(f)
 
 	fileName := f.Name()[strings.LastIndex(f.Name(), "/")+1:]
+	from_timestamp, err := strconv.ParseInt(fileName[strings.Index(fileName, "_")+1:len(fileName)-5], 10, 64)
+	if err != nil {
+		return fmt.Errorf("error converting timestamp from the avro file : %s", err)
+	}
 
 	resolution, err := strconv.ParseInt(fileName[0:strings.Index(fileName, "_")], 10, 64)
 	if err != nil {
@@ -475,7 +479,7 @@ func (l *Level) loadAvroFile(m *MemoryStore, f *os.File, from int64) error {
 		recordCounter += 1
 	}
 
-	to := (from + (recordCounter / (60 / resolution) * 60))
+	to := (from_timestamp + (recordCounter / (60 / resolution) * 60))
 	if to < from {
 		return nil
 	}
@@ -508,12 +512,12 @@ func (l *Level) loadAvroFile(m *MemoryStore, f *os.File, from int64) error {
 			}
 
 			leafMetricName := subString[len(subString)-1]
-			err = lvl.createBuffer(m, leafMetricName, floatArray, from, resolution)
+			err = lvl.createBuffer(m, leafMetricName, floatArray, from_timestamp, resolution)
 			if err != nil {
 				return fmt.Errorf("error while creating buffers from avroReader : %s", err)
 			}
 		} else {
-			err = l.createBuffer(m, metricName, floatArray, from, resolution)
+			err = l.createBuffer(m, metricName, floatArray, from_timestamp, resolution)
 			if err != nil {
 				return fmt.Errorf("error while creating buffers from avroReader : %s", err)
 			}
@@ -551,6 +555,15 @@ func (l *Level) createBuffer(m *MemoryStore, metricName string, floatArray util.
 
 		b.prev = prev
 		prev.next = b
+
+		missingCount := ((int(b.start) - int(prev.start)) - len(prev.data)*int(b.frequency))
+		if missingCount > 0 {
+			missingCount /= int(b.frequency)
+
+			for range missingCount {
+				prev.data = append(prev.data, util.NaN)
+			}
+		}
 	}
 	l.metrics[minfo.Offset] = b
 

@@ -58,7 +58,7 @@ func DataStaging(wg *sync.WaitGroup, ctx context.Context) {
 					if avroLevel == nil {
 						fmt.Printf("Error creating or finding the level with cluster : %s, node : %s, metric : %s\n", val.Cluster, val.Node, val.MetricName)
 					}
-					copy(oldSelector, selector)
+					oldSelector = append([]string{}, selector...)
 				}
 
 				avroLevel.addMetric(metricName, val.Value, val.Timestamp, int(freq))
