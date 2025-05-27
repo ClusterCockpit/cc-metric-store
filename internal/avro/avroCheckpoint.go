@@ -137,9 +137,10 @@ func getTimestamp(dir string) int64 {
 	}
 
 	interval, _ := time.ParseDuration(config.Keys.Checkpoints.Interval)
-	updateTime := time.Now().Add(-interval - time.Duration(CheckpointBufferMinutes) + 1).Unix()
+	updateTime := time.Unix(maxTs, 0).Add(interval).Add(time.Duration(CheckpointBufferMinutes-1) * time.Minute).Unix()
 
-	if maxTs < updateTime {
+	if updateTime < time.Now().Unix() {
+		fmt.Printf("maxTs : %d, updateTime : %d, now : %d\n", maxTs, updateTime, time.Now().Unix())
 		return 0
 	}
 
@@ -151,11 +152,13 @@ func (l *AvroLevel) toCheckpoint(dir string, from int64, dumpAll bool) error {
 	defer l.lock.Unlock()
 
 	// fmt.Printf("Checkpointing directory: %s\n", dir)
+	// filepath contains the resolution
+	int_res, _ := strconv.Atoi(path.Base(dir))
 
 	// find smallest overall timestamp in l.data map and delete it from l.data
 	var minTs int64 = int64(1<<63 - 1)
-	for ts := range l.data {
-		if ts < minTs && len(l.data[ts]) != 0 {
+	for ts, dat := range l.data {
+		if ts < minTs && len(dat) != 0 {
 			minTs = ts
 		}
 	}
@@ -176,8 +179,10 @@ func (l *AvroLevel) toCheckpoint(dir string, from int64, dumpAll bool) error {
 
 	filePath := dir + fmt.Sprintf("_%d.avro", from)
 
-	fp_, err := os.Stat(filePath)
-	if errors.Is(err, os.ErrNotExist) {
+	var err error
+
+	fp_, err_ := os.Stat(filePath)
+	if errors.Is(err_, os.ErrNotExist) {
 		err = os.MkdirAll(path.Dir(dir), 0o755)
 		if err != nil {
 			return fmt.Errorf("failed to create directory: %v", err)
@@ -206,10 +211,8 @@ func (l *AvroLevel) toCheckpoint(dir string, from int64, dumpAll bool) error {
 		time_ref = time.Now().Unix()
 	}
 
+	// Empty values
 	if len(l.data) == 0 {
-		// filepath contains the resolution
-		int_res, _ := strconv.Atoi(path.Base(dir))
-
 		// we checkpoint avro files every 60 seconds
 		repeat := 60 / int_res
 
@@ -236,7 +239,7 @@ func (l *AvroLevel) toCheckpoint(dir string, from int64, dumpAll bool) error {
 			if err != nil {
 				return fmt.Errorf("failed to compare read and generated schema: %v", err)
 			}
-			if flag && readFlag {
+			if flag && readFlag && !errors.Is(err_, os.ErrNotExist) {
 
 				f.Close()
 

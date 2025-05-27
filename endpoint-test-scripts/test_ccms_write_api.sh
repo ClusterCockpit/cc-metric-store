@@ -7,7 +7,7 @@ rm sample_alex.txt
 
 while [ true ]; do
     echo "Alex Metrics for hwthread types and type-ids"
-    timestamp="$(date '+%s%N')"
+    timestamp="$(date '+%s')"
     echo "Timestamp : "+$timestamp
     for metric in cpu_load cpu_user flops_any cpu_irq cpu_system ipc cpu_idle cpu_iowait core_power clock; do
         for hostname in a0603 a0903 a0832 a0329 a0702 a0122 a1624 a0731 a0224 a0704 a0631 a0225 a0222 a0427 a0603 a0429 a0833 a0705 a0901 a0601 a0227 a0804 a0322 a0226 a0126 a0129 a0605 a0801 a0934 a1622 a0902 a0428 a0537 a1623 a1722 a0228 a0701 a0326 a0327 a0123 a0321 a1621 a0323 a0124 a0534 a0931 a0324 a0933 a0424 a0905 a0128 a0532 a0805 a0521 a0535 a0932 a0127 a0325 a0633 a0831 a0803 a0426 a0425 a0229 a1721 a0602 a0632 a0223 a0422 a0423 a0536 a0328 a0703 anvme7 a0125 a0221 a0604 a0802 a0522 a0531 a0533 a0904; do

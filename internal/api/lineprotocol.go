@@ -330,6 +330,8 @@ func decodeLine(dec *lineprotocol.Decoder,
 			return fmt.Errorf("host %s: timestamp : %#v with error : %#v", host, t, err.Error())
 		}
 
+		time := t.Unix()
+
 		if config.Keys.Checkpoints.FileFormat != "json" {
 			avro.LineProtocolMessages <- &avro.AvroStruct{
 				MetricName: string(metricBuf),
@@ -337,10 +339,10 @@ func decodeLine(dec *lineprotocol.Decoder,
 				Node:       host,
 				Selector:   append([]string{}, selector...),
 				Value:      metric.Value,
-				Timestamp:  t.Unix()}
+				Timestamp:  time}
 		}
 
-		if err := ms.WriteToLevel(lvl, selector, t.Unix(), []memorystore.Metric{metric}); err != nil {
+		if err := ms.WriteToLevel(lvl, selector, time, []memorystore.Metric{metric}); err != nil {
 			return err
 		}
 	}

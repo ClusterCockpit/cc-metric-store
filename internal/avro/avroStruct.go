@@ -117,17 +117,34 @@ func (l *AvroLevel) addMetric(metricName string, value util.Float, timestamp int
 		}
 	}
 
+	closestTs := int64(0)
+	minDiff := int64(Freq) + 1 // Start with diff just outside the valid range
+	found := false
+
 	// Iterate over timestamps and choose the one which is within range.
 	// Since its epoch time, we check if the difference is less than 60 seconds.
 	for ts, dat := range l.data {
-		if _, ok := dat[metricName]; ok {
-			// If the metric is already present, we can skip it
+		// Check if timestamp is within range
+		diff := timestamp - ts
+		if diff < -int64(Freq) || diff > int64(Freq) {
 			continue
 		}
-		if Abs(ts-timestamp) < int64(Freq) {
-			dat[metricName] = value
-			break
+
+		// Metric already present at this timestamp — skip
+		if _, ok := dat[metricName]; ok {
+			continue
 		}
+
+		// Check if this is the closest timestamp so far
+		if Abs(diff) < minDiff {
+			minDiff = Abs(diff)
+			closestTs = ts
+			found = true
+		}
+	}
+
+	if found {
+		l.data[closestTs][metricName] = value
 	}
 }
 

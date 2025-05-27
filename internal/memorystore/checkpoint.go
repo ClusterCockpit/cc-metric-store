@@ -386,6 +386,9 @@ func (m *MemoryStore) FromCheckpointFiles(dir string, from int64) (int, error) {
 
 	// Config read (replace with your actual config read)
 	fileFormat := config.Keys.Checkpoints.FileFormat
+	if fileFormat == "" {
+		fileFormat = "avro"
+	}
 
 	// Map to easily get the fallback format
 	oppositeFormat := map[string]string{
@@ -439,14 +442,18 @@ func (l *Level) loadAvroFile(m *MemoryStore, f *os.File, from int64) error {
 	br := bufio.NewReader(f)
 
 	fileName := f.Name()[strings.LastIndex(f.Name(), "/")+1:]
-	from_timestamp, err := strconv.ParseInt(fileName[strings.Index(fileName, "_")+1:len(fileName)-5], 10, 64)
-	if err != nil {
-		return fmt.Errorf("error converting timestamp from the avro file : %s", err)
-	}
-
 	resolution, err := strconv.ParseInt(fileName[0:strings.Index(fileName, "_")], 10, 64)
 	if err != nil {
 		return fmt.Errorf("error while reading avro file (resolution parsing) : %s", err)
+	}
+
+	from_timestamp, err := strconv.ParseInt(fileName[strings.Index(fileName, "_")+1:len(fileName)-5], 10, 64)
+
+	// Same logic according to lineprotocol
+	from_timestamp -= (resolution / 2)
+
+	if err != nil {
+		return fmt.Errorf("error converting timestamp from the avro file : %s", err)
 	}
 
 	// fmt.Printf("File : %s with resolution : %d\n", fileName, resolution)
