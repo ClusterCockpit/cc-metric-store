@@ -536,10 +536,11 @@ func (l *Level) loadAvroFile(m *MemoryStore, f *os.File, from int64) error {
 }
 
 func (l *Level) createBuffer(m *MemoryStore, metricName string, floatArray util.FloatArray, from int64, resolution int64) error {
+	n := len(floatArray)
 	b := &buffer{
 		frequency: resolution,
 		start:     from,
-		data:      floatArray,
+		data:      floatArray[0:n:n],
 		prev:      nil,
 		next:      nil,
 		archived:  true,
@@ -570,6 +571,8 @@ func (l *Level) createBuffer(m *MemoryStore, metricName string, floatArray util.
 			for range missingCount {
 				prev.data = append(prev.data, util.NaN)
 			}
+
+			prev.data = prev.data[0:len(prev.data):len(prev.data)]
 		}
 	}
 	l.metrics[minfo.Offset] = b
