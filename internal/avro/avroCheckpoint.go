@@ -140,7 +140,6 @@ func getTimestamp(dir string) int64 {
 	updateTime := time.Unix(maxTs, 0).Add(interval).Add(time.Duration(CheckpointBufferMinutes-1) * time.Minute).Unix()
 
 	if updateTime < time.Now().Unix() {
-		fmt.Printf("maxTs : %d, updateTime : %d, now : %d\n", maxTs, updateTime, time.Now().Unix())
 		return 0
 	}
 
@@ -295,8 +294,9 @@ func (l *AvroLevel) toCheckpoint(dir string, from int64, dumpAll bool) error {
 	// fmt.Printf("Codec : %#v\n", codec)
 
 	writer, err := goavro.NewOCFWriter(goavro.OCFConfig{
-		W:     f,
-		Codec: codec,
+		W:               f,
+		Codec:           codec,
+		CompressionName: goavro.CompressionDeflateLabel,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create OCF writer: %v", err)
