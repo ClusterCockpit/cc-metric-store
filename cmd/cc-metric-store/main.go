@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/ClusterCockpit/cc-metric-store/internal/api"
+	"github.com/ClusterCockpit/cc-metric-store/internal/avro"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/ClusterCockpit/cc-metric-store/internal/memorystore"
 	"github.com/ClusterCockpit/cc-metric-store/internal/runtimeEnv"
@@ -68,7 +69,7 @@ func main() {
 
 	restoreFrom := startupTime.Add(-d)
 	log.Printf("Loading checkpoints newer than %s\n", restoreFrom.Format(time.RFC3339))
-	files, err := ms.FromCheckpoint(config.Keys.Checkpoints.RootDir, restoreFrom.Unix())
+	files, err := ms.FromCheckpointFiles(config.Keys.Checkpoints.RootDir, restoreFrom.Unix())
 	loadedData := ms.SizeInBytes() / 1024 / 1024 // In MB
 	if err != nil {
 		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
@@ -90,11 +91,12 @@ func main() {
 	ctx, shutdown := context.WithCancel(context.Background())
 
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(4)
 
 	memorystore.Retention(&wg, ctx)
 	memorystore.Checkpointing(&wg, ctx)
 	memorystore.Archiving(&wg, ctx)
+	avro.DataStaging(&wg, ctx)
 
 	r := http.NewServeMux()
 	api.MountRoutes(r)
@@ -132,9 +134,9 @@ func main() {
 			MinVersion:               tls.VersionTLS12,
 			PreferServerCipherSuites: true,
 		})
-		fmt.Printf("HTTPS server listening at %s...", config.Keys.HttpConfig.Address)
+		fmt.Printf("HTTPS server listening at %s...\n", config.Keys.HttpConfig.Address)
 	} else {
-		fmt.Printf("HTTP server listening at %s...", config.Keys.HttpConfig.Address)
+		fmt.Printf("HTTP server listening at %s...\n", config.Keys.HttpConfig.Address)
 	}
 
 	wg.Add(1)
