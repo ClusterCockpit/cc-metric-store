@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ClusterCockpit/cc-metric-store/internal/avro"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/ClusterCockpit/cc-metric-store/internal/util"
 	"github.com/ClusterCockpit/cc-metric-store/pkg/resampler"
@@ -76,13 +77,94 @@ func GetMemoryStore() *MemoryStore {
 }
 
 func Shutdown() {
-	ms := GetMemoryStore()
 	log.Printf("Writing to '%s'...\n", config.Keys.Checkpoints.RootDir)
-	files, err := ms.ToCheckpoint(config.Keys.Checkpoints.RootDir, lastCheckpoint.Unix(), time.Now().Unix())
+	var files int
+	var err error
+
+	ms := GetMemoryStore()
+
+	if config.Keys.Checkpoints.FileFormat == "json" {
+		files, err = ms.ToCheckpoint(config.Keys.Checkpoints.RootDir, lastCheckpoint.Unix(), time.Now().Unix())
+	} else {
+		files, err = avro.GetAvroStore().ToCheckpoint(config.Keys.Checkpoints.RootDir, true)
+		close(avro.LineProtocolMessages)
+	}
+
 	if err != nil {
 		log.Printf("Writing checkpoint failed: %s\n", err.Error())
 	}
 	log.Printf("Done! (%d files written)\n", files)
+
+	// ms.PrintHeirarchy()
+}
+
+// func (m *MemoryStore) PrintHeirarchy() {
+// 	m.root.lock.Lock()
+// 	defer m.root.lock.Unlock()
+
+// 	fmt.Printf("Root : \n")
+
+// 	for lvl1, sel1 := range m.root.children {
+// 		fmt.Printf("\t%s\n", lvl1)
+// 		for lvl2, sel2 := range sel1.children {
+// 			fmt.Printf("\t\t%s\n", lvl2)
+// 			if lvl1 == "fritz" && lvl2 == "f0201" {
+
+// 				for name, met := range m.Metrics {
+// 					mt := sel2.metrics[met.Offset]
+
+// 					fmt.Printf("\t\t\t\t%s\n", name)
+// 					fmt.Printf("\t\t\t\t")
+
+// 					for mt != nil {
+// 						// if name == "cpu_load" {
+// 						fmt.Printf("%d(%d) -> %#v", mt.start, len(mt.data), mt.data)
+// 						// }
+// 						mt = mt.prev
+// 					}
+// 					fmt.Printf("\n")
+
+// 				}
+// 			}
+// 			for lvl3, sel3 := range sel2.children {
+// 				if lvl1 == "fritz" && lvl2 == "f0201" && lvl3 == "hwthread70" {
+
+// 					fmt.Printf("\t\t\t\t\t%s\n", lvl3)
+
+// 					for name, met := range m.Metrics {
+// 						mt := sel3.metrics[met.Offset]
+
+// 						fmt.Printf("\t\t\t\t\t\t%s\n", name)
+
+// 						fmt.Printf("\t\t\t\t\t\t")
+
+// 						for mt != nil {
+// 							// if name == "clock" {
+// 							fmt.Printf("%d(%d) -> %#v", mt.start, len(mt.data), mt.data)
+
+// 							mt = mt.prev
+// 						}
+// 						fmt.Printf("\n")
+
+// 					}
+
+// 					// for i, _ := range sel3.metrics {
+// 					// 	fmt.Printf("\t\t\t\t\t%s\n", getName(configmetrics, i))
+// 					// }
+// 				}
+// 			}
+// 		}
+// 	}
+
+// }
+
+func getName(m *MemoryStore, i int) string {
+	for key, val := range m.Metrics {
+		if val.Offset == i {
+			return key
+		}
+	}
+	return ""
 }
 
 func Retention(wg *sync.WaitGroup, ctx context.Context) {
