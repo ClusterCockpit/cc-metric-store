@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ClusterCockpit/cc-metric-store/internal/avro"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/ClusterCockpit/cc-metric-store/internal/memorystore"
 	"github.com/ClusterCockpit/cc-metric-store/internal/util"
@@ -254,8 +255,8 @@ func decodeLine(dec *lineprotocol.Decoder,
 				}
 			case "type-id":
 				typeBuf = append(typeBuf, val...)
-			case "subtype":
-				// We cannot be sure that the "subtype" tag comes before the "stype-id" tag:
+			case "stype":
+				// We cannot be sure that the "stype" tag comes before the "stype-id" tag:
 				if len(subTypeBuf) == 0 {
 					subTypeBuf = append(subTypeBuf, val...)
 				} else {
@@ -329,7 +330,19 @@ func decodeLine(dec *lineprotocol.Decoder,
 			return fmt.Errorf("host %s: timestamp : %#v with error : %#v", host, t, err.Error())
 		}
 
-		if err := ms.WriteToLevel(lvl, selector, t.Unix(), []memorystore.Metric{metric}); err != nil {
+		time := t.Unix()
+
+		if config.Keys.Checkpoints.FileFormat != "json" {
+			avro.LineProtocolMessages <- &avro.AvroStruct{
+				MetricName: string(metricBuf),
+				Cluster:    cluster,
+				Node:       host,
+				Selector:   append([]string{}, selector...),
+				Value:      metric.Value,
+				Timestamp:  time}
+		}
+
+		if err := ms.WriteToLevel(lvl, selector, time, []memorystore.Metric{metric}); err != nil {
 			return err
 		}
 	}
