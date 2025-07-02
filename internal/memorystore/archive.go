@@ -7,13 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	cclog "github.com/ClusterCockpit/cc-lib/ccLogger"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 )
 
@@ -22,7 +22,7 @@ func Archiving(wg *sync.WaitGroup, ctx context.Context) {
 		defer wg.Done()
 		d, err := time.ParseDuration(config.Keys.Archive.Interval)
 		if err != nil {
-			log.Fatal(err)
+			cclog.Fatalf("error parsing archive interval duration: %v\n", err)
 		}
 		if d <= 0 {
 			return
@@ -40,12 +40,12 @@ func Archiving(wg *sync.WaitGroup, ctx context.Context) {
 				return
 			case <-ticks:
 				t := time.Now().Add(-d)
-				log.Printf("start archiving checkpoints (older than %s)...\n", t.Format(time.RFC3339))
+				cclog.Infof("start archiving checkpoints (older than %s)...\n", t.Format(time.RFC3339))
 				n, err := ArchiveCheckpoints(config.Keys.Checkpoints.RootDir, config.Keys.Archive.RootDir, t.Unix(), config.Keys.Archive.DeleteInstead)
 				if err != nil {
-					log.Printf("archiving failed: %s\n", err.Error())
+					cclog.Warnf("archiving failed: %s\n", err.Error())
 				} else {
-					log.Printf("done: %d files zipped and moved to archive\n", n)
+					cclog.Infof("done: %d files zipped and moved to archive\n", n)
 				}
 			}
 		}
@@ -78,7 +78,7 @@ func ArchiveCheckpoints(checkpointsDir, archiveDir string, from int64, deleteIns
 			for workItem := range work {
 				m, err := archiveCheckpoints(workItem.cdir, workItem.adir, from, deleteInstead)
 				if err != nil {
-					log.Printf("error while archiving %s/%s: %s", workItem.cluster, workItem.host, err.Error())
+					cclog.Errorf("error while archiving %s/%s: %s", workItem.cluster, workItem.host, err.Error())
 					atomic.AddInt32(&errs, 1)
 				}
 				atomic.AddInt32(&n, int32(m))

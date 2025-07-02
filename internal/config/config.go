@@ -65,7 +65,7 @@ type NatsConfig struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 
-	//Creds file path
+	// Creds file path
 	Credsfilepath string `json:"creds-file-path"`
 
 	Subscriptions []struct {

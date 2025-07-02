@@ -9,7 +9,6 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -20,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	cclog "github.com/ClusterCockpit/cc-lib/ccLogger"
 	"github.com/ClusterCockpit/cc-metric-store/internal/api"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/ClusterCockpit/cc-metric-store/internal/memorystore"
@@ -35,9 +35,12 @@ var (
 )
 
 func main() {
-	var configFile string
-	var enableGopsAgent, flagVersion, flagDev bool
+	var configFile, flagLogLevel string
+	var enableGopsAgent, flagVersion, flagDev, flagLogDateTime bool
+
 	flag.StringVar(&configFile, "config", "./config.json", "configuration file")
+	flag.StringVar(&flagLogLevel, "loglevel", "warn", "Sets the logging level: `[debug,info,warn (default),err,fatal,crit]`")
+	flag.BoolVar(&flagLogDateTime, "logdate", false, "Set this flag to add date and time to log messages")
 	flag.BoolVar(&enableGopsAgent, "gops", false, "Listen via github.com/google/gops/agent")
 	flag.BoolVar(&flagDev, "dev", false, "Enable development Swagger UI component")
 	flag.BoolVar(&flagVersion, "version", false, "Show version information and exit")
@@ -50,6 +53,7 @@ func main() {
 		os.Exit(0)
 	}
 
+	cclog.Init(flagLogLevel, flagLogDateTime)
 	startupTime := time.Now()
 	config.Init(configFile)
 	memorystore.Init(config.Keys.Metrics)
@@ -57,23 +61,24 @@ func main() {
 
 	if enableGopsAgent || config.Keys.Debug.EnableGops {
 		if err := agent.Listen(agent.Options{}); err != nil {
-			log.Fatal(err)
+			cclog.Fatal(err)
 		}
 	}
 
 	d, err := time.ParseDuration(config.Keys.Checkpoints.Restore)
 	if err != nil {
-		log.Fatal(err)
+		cclog.Fatalf("error parsing checkpoint restore duration: %v\n", err)
 	}
 
 	restoreFrom := startupTime.Add(-d)
-	log.Printf("Loading checkpoints newer than %s\n", restoreFrom.Format(time.RFC3339))
+	cclog.Printf("loading checkpoints newer than %s\n", restoreFrom.Format(time.RFC3339))
 	files, err := ms.FromCheckpoint(config.Keys.Checkpoints.RootDir, restoreFrom.Unix())
 	loadedData := ms.SizeInBytes() / 1024 / 1024 // In MB
 	if err != nil {
-		log.Fatalf("Loading checkpoints failed: %s\n", err.Error())
+		cclog.Fatalf("loading checkpoints failed: %s\n", err.Error())
 	} else {
-		log.Printf("Checkpoints loaded (%d files, %d MB, that took %fs)\n", files, loadedData, time.Since(startupTime).Seconds())
+		cclog.Infof("checkpoints loaded (%d files, %d MB, that took %fs)\n",
+			files, loadedData, time.Since(startupTime).Seconds())
 	}
 
 	// Try to use less memory by forcing a GC run here and then
@@ -100,7 +105,7 @@ func main() {
 	api.MountRoutes(r)
 
 	if flagDev {
-		log.Print("Enable Swagger UI!")
+		cclog.Info("Enable Swagger UI!")
 		r.HandleFunc("GET /swagger/", httpSwagger.Handler(
 			httpSwagger.URL("http://"+config.Keys.HttpConfig.Address+"/swagger/doc.json")))
 	}
@@ -115,13 +120,13 @@ func main() {
 	// Start http or https server
 	listener, err := net.Listen("tcp", config.Keys.HttpConfig.Address)
 	if err != nil {
-		log.Fatalf("starting http listener failed: %v", err)
+		cclog.Fatalf("starting http listener failed: %v", err)
 	}
 
 	if config.Keys.HttpConfig.CertFile != "" && config.Keys.HttpConfig.KeyFile != "" {
 		cert, err := tls.LoadX509KeyPair(config.Keys.HttpConfig.CertFile, config.Keys.HttpConfig.KeyFile)
 		if err != nil {
-			log.Fatalf("loading X509 keypair failed: %v", err)
+			cclog.Fatalf("loading X509 keypair failed: %v", err)
 		}
 		listener = tls.NewListener(listener, &tls.Config{
 			Certificates: []tls.Certificate{cert},
@@ -141,7 +146,7 @@ func main() {
 	go func() {
 		defer wg.Done()
 		if err = server.Serve(listener); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("starting server failed: %v", err)
+			cclog.Fatalf("starting server failed: %v", err)
 		}
 	}()
 
@@ -166,7 +171,7 @@ func main() {
 				// err := ReceiveNats(conf.Nats, decodeLine, runtime.NumCPU()-1, ctx)
 				err := api.ReceiveNats(nc, ms, 1, ctx)
 				if err != nil {
-					log.Fatal(err)
+					cclog.Fatal(err)
 				}
 				wg.Done()
 			}()
@@ -175,5 +180,5 @@ func main() {
 
 	runtimeEnv.SystemdNotifiy(true, "running")
 	wg.Wait()
-	log.Print("Graceful shutdown completed!")
+	cclog.Info("Graceful shutdown completed!")
 }
