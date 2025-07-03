@@ -66,7 +66,7 @@ func ReceiveRaw(ctx context.Context,
 					return
 				}
 
-				log.Printf("%s: %s", conn.RemoteAddr().String(), err.Error())
+				log.Printf("ReceiveRaw Error from Address %s: %s", conn.RemoteAddr().String(), err.Error())
 				errmsg := make([]byte, 128)
 				errmsg = append(errmsg, `error: `...)
 				errmsg = append(errmsg, err.Error()...)

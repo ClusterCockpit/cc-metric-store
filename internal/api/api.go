@@ -380,7 +380,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	bw := bufio.NewWriter(rw)
 	defer bw.Flush()
 	if err := json.NewEncoder(bw).Encode(response); err != nil {
-		log.Print(err)
+		log.Printf("handleQuery Response Encode Error: %s", err.Error())
 		return
 	}
 }
