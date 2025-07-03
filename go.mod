@@ -6,9 +6,10 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/google/gops v0.3.28
 	github.com/influxdata/line-protocol/v2 v2.2.1
+	github.com/linkedin/goavro/v2 v2.13.1
 	github.com/nats-io/nats.go v1.36.0
 	github.com/swaggo/http-swagger v1.3.4
-	github.com/swaggo/swag v1.16.3
+	github.com/swaggo/swag v1.16.4
 )
 
 require (
@@ -21,7 +22,6 @@ require (
 	github.com/golang/snappy v0.0.1 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
-	github.com/linkedin/goavro/v2 v2.13.1 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/nats-io/nkeys v0.4.7 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
