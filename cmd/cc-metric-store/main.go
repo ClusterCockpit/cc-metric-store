@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -28,44 +29,15 @@ var (
 	version string
 )
 
+var (
+	flagGops, flagVersion, flagDev, flagLogDateTime bool
+	flagConfigFile, flagLogLevel                    string
+)
+
 func printVersion() {
 	fmt.Printf("Version:\t%s\n", version)
 	fmt.Printf("Git hash:\t%s\n", commit)
 	fmt.Printf("Build time:\t%s\n", date)
-}
-
-func initGops() error {
-	if !flagGops && !config.Keys.Debug.EnableGops {
-		return nil
-	}
-
-	if err := agent.Listen(agent.Options{}); err != nil {
-		return fmt.Errorf("starting gops agent: %w", err)
-	}
-	return nil
-}
-
-func initConfiguration() error {
-	ccconf.Init(flagConfigFile)
-
-	cfg := ccconf.GetPackageConfig("main")
-	if cfg == nil {
-		return fmt.Errorf("main configuration must be present")
-	}
-
-	config.Init(cfg)
-	return nil
-}
-
-func initSubsystems() error {
-	// Initialize nats client
-	natsConfig := ccconf.GetPackageConfig("nats")
-	if err := nats.Init(natsConfig); err != nil {
-		cclog.Warnf("initializing (optional) nats client: %s", err.Error())
-	}
-	nats.Connect()
-
-	return nil
 }
 
 func runServer(ctx context.Context) error {
@@ -131,36 +103,42 @@ func runServer(ctx context.Context) error {
 }
 
 func run() error {
-	cliInit()
+	flag.BoolVar(&flagGops, "gops", false, "Listen via github.com/google/gops/agent (for debugging)")
+	flag.BoolVar(&flagDev, "dev", false, "Enable development component: Swagger UI")
+	flag.BoolVar(&flagVersion, "version", false, "Show version information and exit")
+	flag.BoolVar(&flagLogDateTime, "logdate", false, "Set this flag to add date and time to log messages")
+	flag.StringVar(&flagConfigFile, "config", "./config.json", "Specify alternative path to `config.json`")
+	flag.StringVar(&flagLogLevel, "loglevel", "warn", "Sets the logging level: `[debug, info, warn (default), err, crit]`")
+	flag.Parse()
 
 	if flagVersion {
 		printVersion()
 		return nil
 	}
 
-	// Initialize logger
 	cclog.Init(flagLogLevel, flagLogDateTime)
 
-	// Initialize gops agent
-	if err := initGops(); err != nil {
-		return err
+	if flagGops || config.Keys.Debug.EnableGops {
+		if err := agent.Listen(agent.Options{}); err != nil {
+			return fmt.Errorf("starting gops agent: %w", err)
+		}
 	}
 
-	// Initialize subsystems in dependency order:
-	// 1. Load configuration from config.json
-	// 2. Initialize subsystems like nats
+	ccconf.Init(flagConfigFile)
 
-	// Load configuration
-	if err := initConfiguration(); err != nil {
-		return err
+	cfg := ccconf.GetPackageConfig("main")
+	if cfg == nil {
+		return fmt.Errorf("main configuration must be present")
 	}
 
-	// Initialize subsystems (nats, etc.)
-	if err := initSubsystems(); err != nil {
-		return err
-	}
+	config.Init(cfg)
 
-	// Run server with context
+	natsConfig := ccconf.GetPackageConfig("nats")
+	if err := nats.Init(natsConfig); err != nil {
+		cclog.Warnf("initializing (optional) nats client: %s", err.Error())
+	}
+	nats.Connect()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
