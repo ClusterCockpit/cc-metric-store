@@ -1,7 +1,8 @@
 // Copyright (C) NHR@FAU, University Erlangen-Nuremberg.
-// All rights reserved.
+// All rights reserved. This file is part of cc-metric-store.
 // Use of this source code is governed by a MIT-style
 // license that can be found in the LICENSE file.
+
 package api
 
 import (
@@ -16,28 +17,13 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ClusterCockpit/cc-metric-store/internal/memorystore"
-	"github.com/ClusterCockpit/cc-metric-store/internal/util"
+	"github.com/ClusterCockpit/cc-backend/pkg/metricstore"
+	cclog "github.com/ClusterCockpit/cc-lib/v2/ccLogger"
+	"github.com/ClusterCockpit/cc-lib/v2/schema"
+	"github.com/ClusterCockpit/cc-lib/v2/util"
+
 	"github.com/influxdata/line-protocol/v2/lineprotocol"
 )
-
-// @title                      cc-metric-store REST API
-// @version                    1.0.0
-// @description                API for cc-metric-store
-
-// @contact.name               ClusterCockpit Project
-// @contact.url                https://clustercockpit.org
-// @contact.email              support@clustercockpit.org
-
-// @license.name               MIT License
-// @license.url                https://opensource.org/licenses/MIT
-
-// @host                       localhost:8082
-// @basePath                   /api/
-
-// @securityDefinitions.apikey ApiKeyAuth
-// @in                         header
-// @name                       X-Auth-Token
 
 // ErrorResponse model
 type ErrorResponse struct {
@@ -46,29 +32,38 @@ type ErrorResponse struct {
 	Error  string `json:"error"` // Error Message
 }
 
-type ApiMetricData struct {
-	Error      *string         `json:"error,omitempty"`
-	Data       util.FloatArray `json:"data,omitempty"`
-	From       int64           `json:"from"`
-	To         int64           `json:"to"`
-	Resolution int64           `json:"resolution"`
-	Avg        util.Float      `json:"avg"`
-	Min        util.Float      `json:"min"`
-	Max        util.Float      `json:"max"`
+// DefaultAPIResponse model
+type DefaultAPIResponse struct {
+	Message string `json:"msg"`
 }
 
+// handleError writes a standardized JSON error response with the given status code.
+// It logs the error at WARN level and ensures proper Content-Type headers are set.
 func handleError(err error, statusCode int, rw http.ResponseWriter) {
-	// log.Warnf("REST ERROR : %s", err.Error())
+	cclog.Warnf("REST ERROR : %s", err.Error())
 	rw.Header().Add("Content-Type", "application/json")
 	rw.WriteHeader(statusCode)
-	json.NewEncoder(rw).Encode(ErrorResponse{
+	if err := json.NewEncoder(rw).Encode(ErrorResponse{
 		Status: http.StatusText(statusCode),
 		Error:  err.Error(),
-	})
+	}); err != nil {
+		cclog.Errorf("Failed to encode error response: %v", err)
+	}
+}
+
+type APIMetricData struct {
+	Error      *string           `json:"error,omitempty"`
+	Data       schema.FloatArray `json:"data,omitempty"`
+	From       int64             `json:"from"`
+	To         int64             `json:"to"`
+	Resolution int64             `json:"resolution"`
+	Avg        schema.Float      `json:"avg"`
+	Min        schema.Float      `json:"min"`
+	Max        schema.Float      `json:"max"`
 }
 
 // TODO: Optimize this, just like the stats endpoint!
-func (data *ApiMetricData) AddStats() {
+func (data *APIMetricData) AddStats() {
 	n := 0
 	sum, min, max := 0.0, math.MaxFloat64, -math.MaxFloat64
 	for _, x := range data.Data {
@@ -84,15 +79,15 @@ func (data *ApiMetricData) AddStats() {
 
 	if n > 0 {
 		avg := sum / float64(n)
-		data.Avg = util.Float(avg)
-		data.Min = util.Float(min)
-		data.Max = util.Float(max)
+		data.Avg = schema.Float(avg)
+		data.Min = schema.Float(min)
+		data.Max = schema.Float(max)
 	} else {
-		data.Avg, data.Min, data.Max = util.NaN, util.NaN, util.NaN
+		data.Avg, data.Min, data.Max = schema.NaN, schema.NaN, schema.NaN
 	}
 }
 
-func (data *ApiMetricData) ScaleBy(f util.Float) {
+func (data *APIMetricData) ScaleBy(f schema.Float) {
 	if f == 0 || f == 1 {
 		return
 	}
@@ -105,7 +100,7 @@ func (data *ApiMetricData) ScaleBy(f util.Float) {
 	}
 }
 
-func (data *ApiMetricData) PadDataWithNull(ms *memorystore.MemoryStore, from, to int64, metric string) {
+func (data *APIMetricData) PadDataWithNull(ms *metricstore.MemoryStore, from, to int64, metric string) {
 	minfo, ok := ms.Metrics[metric]
 	if !ok {
 		return
@@ -113,9 +108,9 @@ func (data *ApiMetricData) PadDataWithNull(ms *memorystore.MemoryStore, from, to
 
 	if (data.From / minfo.Frequency) > (from / minfo.Frequency) {
 		padfront := int((data.From / minfo.Frequency) - (from / minfo.Frequency))
-		ndata := make([]util.Float, 0, padfront+len(data.Data))
-		for i := 0; i < padfront; i++ {
-			ndata = append(ndata, util.NaN)
+		ndata := make([]schema.Float, 0, padfront+len(data.Data))
+		for range padfront {
+			ndata = append(ndata, schema.NaN)
 		}
 		for j := 0; j < len(data.Data); j++ {
 			ndata = append(ndata, data.Data[j])
@@ -124,102 +119,9 @@ func (data *ApiMetricData) PadDataWithNull(ms *memorystore.MemoryStore, from, to
 	}
 }
 
-// handleFree godoc
-// @summary
-// @tags free
-// @description This endpoint allows the users to free the Buffers from the
-// metric store. This endpoint offers the users to remove then systematically
-// and also allows then to prune the data under node, if they do not want to
-// remove the whole node.
-// @produce     json
-// @param       to        query    string        false  "up to timestamp"
-// @success     200            {string} string  "ok"
-// @failure     400            {object} api.ErrorResponse       "Bad Request"
-// @failure     401            {object} api.ErrorResponse       "Unauthorized"
-// @failure     403            {object} api.ErrorResponse       "Forbidden"
-// @failure     500            {object} api.ErrorResponse       "Internal Server Error"
-// @security    ApiKeyAuth
-// @router      /free/ [post]
-func handleFree(rw http.ResponseWriter, r *http.Request) {
-	rawTo := r.URL.Query().Get("to")
-	if rawTo == "" {
-		handleError(errors.New("'to' is a required query parameter"), http.StatusBadRequest, rw)
-		return
-	}
-
-	to, err := strconv.ParseInt(rawTo, 10, 64)
-	if err != nil {
-		handleError(err, http.StatusInternalServerError, rw)
-		return
-	}
-
-	// // TODO: lastCheckpoint might be modified by different go-routines.
-	// // Load it using the sync/atomic package?
-	// freeUpTo := lastCheckpoint.Unix()
-	// if to < freeUpTo {
-	// 	freeUpTo = to
-	// }
-
-	bodyDec := json.NewDecoder(r.Body)
-	var selectors [][]string
-	err = bodyDec.Decode(&selectors)
-	if err != nil {
-		http.Error(rw, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	ms := memorystore.GetMemoryStore()
-	n := 0
-	for _, sel := range selectors {
-		bn, err := ms.Free(sel, to)
-		if err != nil {
-			handleError(err, http.StatusInternalServerError, rw)
-			return
-		}
-
-		n += bn
-	}
-
-	rw.WriteHeader(http.StatusOK)
-	fmt.Fprintf(rw, "buffers freed: %d\n", n)
-}
-
-// handleWrite godoc
-// @summary Receive metrics in InfluxDB line-protocol
-// @tags write
-// @description Write data to the in-memory store in the InfluxDB line-protocol using [this format](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md)
-
-// @accept      plain
-// @produce     json
-// @param       cluster        query string false "If the lines in the body do not have a cluster tag, use this value instead."
-// @success     200            {string} string  "ok"
-// @failure     400            {object} api.ErrorResponse       "Bad Request"
-// @failure     401            {object} api.ErrorResponse       "Unauthorized"
-// @failure     403            {object} api.ErrorResponse       "Forbidden"
-// @failure     500            {object} api.ErrorResponse       "Internal Server Error"
-// @security    ApiKeyAuth
-// @router      /write/ [post]
-func handleWrite(rw http.ResponseWriter, r *http.Request) {
-	bytes, err := io.ReadAll(r.Body)
-	rw.Header().Add("Content-Type", "application/json")
-	if err != nil {
-		handleError(err, http.StatusInternalServerError, rw)
-		return
-	}
-
-	ms := memorystore.GetMemoryStore()
-	dec := lineprotocol.NewDecoderWithBytes(bytes)
-	if err := decodeLine(dec, ms, r.URL.Query().Get("cluster")); err != nil {
-		log.Printf("/api/write error: %s", err.Error())
-		handleError(err, http.StatusBadRequest, rw)
-		return
-	}
-	rw.WriteHeader(http.StatusOK)
-}
-
-type ApiQueryRequest struct {
+type APIQueryRequest struct {
 	Cluster     string     `json:"cluster"`
-	Queries     []ApiQuery `json:"queries"`
+	Queries     []APIQuery `json:"queries"`
 	ForAllNodes []string   `json:"for-all-nodes"`
 	From        int64      `json:"from"`
 	To          int64      `json:"to"`
@@ -228,21 +130,21 @@ type ApiQueryRequest struct {
 	WithPadding bool       `json:"with-padding"`
 }
 
-type ApiQueryResponse struct {
-	Queries []ApiQuery        `json:"queries,omitempty"`
-	Results [][]ApiMetricData `json:"results"`
+type APIQueryResponse struct {
+	Queries []APIQuery        `json:"queries,omitempty"`
+	Results [][]APIMetricData `json:"results"`
 }
 
-type ApiQuery struct {
-	Type        *string    `json:"type,omitempty"`
-	SubType     *string    `json:"subtype,omitempty"`
-	Metric      string     `json:"metric"`
-	Hostname    string     `json:"host"`
-	Resolution  int64      `json:"resolution"`
-	TypeIds     []string   `json:"type-ids,omitempty"`
-	SubTypeIds  []string   `json:"subtype-ids,omitempty"`
-	ScaleFactor util.Float `json:"scale-by,omitempty"`
-	Aggregate   bool       `json:"aggreg"`
+type APIQuery struct {
+	Type        *string      `json:"type,omitempty"`
+	SubType     *string      `json:"subtype,omitempty"`
+	Metric      string       `json:"metric"`
+	Hostname    string       `json:"host"`
+	Resolution  int64        `json:"resolution"`
+	TypeIds     []string     `json:"type-ids,omitempty"`
+	SubTypeIds  []string     `json:"subtype-ids,omitempty"`
+	ScaleFactor schema.Float `json:"scale-by,omitempty"`
+	Aggregate   bool         `json:"aggreg"`
 }
 
 // handleQuery godoc
@@ -267,22 +169,22 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	if ver == "" {
 		ver = "v2"
 	}
-	req := ApiQueryRequest{WithStats: true, WithData: true, WithPadding: true}
+	req := APIQueryRequest{WithStats: true, WithData: true, WithPadding: true}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		handleError(err, http.StatusBadRequest, rw)
 		return
 	}
 
-	ms := memorystore.GetMemoryStore()
+	ms := metricstore.GetMemoryStore()
 
-	response := ApiQueryResponse{
-		Results: make([][]ApiMetricData, 0, len(req.Queries)),
+	response := APIQueryResponse{
+		Results: make([][]APIMetricData, 0, len(req.Queries)),
 	}
 	if req.ForAllNodes != nil {
 		nodes := ms.ListChildren([]string{req.Cluster})
 		for _, node := range nodes {
 			for _, metric := range req.ForAllNodes {
-				q := ApiQuery{
+				q := APIQuery{
 					Metric:   metric,
 					Hostname: node,
 				}
@@ -321,21 +223,21 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 			}
 			sels = append(sels, sel)
 		} else {
-			for _, typeId := range query.TypeIds {
+			for _, typeID := range query.TypeIds {
 				if query.SubType != nil {
-					for _, subTypeId := range query.SubTypeIds {
+					for _, subTypeID := range query.SubTypeIds {
 						sels = append(sels, util.Selector{
 							{String: req.Cluster},
 							{String: query.Hostname},
-							{String: *query.Type + typeId},
-							{String: *query.SubType + subTypeId},
+							{String: *query.Type + typeID},
+							{String: *query.SubType + subTypeID},
 						})
 					}
 				} else {
 					sels = append(sels, util.Selector{
 						{String: req.Cluster},
 						{String: query.Hostname},
-						{String: *query.Type + typeId},
+						{String: *query.Type + typeID},
 					})
 				}
 			}
@@ -344,9 +246,9 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 		// log.Printf("query: %#v\n", query)
 		// log.Printf("sels: %#v\n", sels)
 
-		res := make([]ApiMetricData, 0, len(sels))
+		res := make([]APIMetricData, 0, len(sels))
 		for _, sel := range sels {
-			data := ApiMetricData{}
+			data := APIMetricData{}
 			if ver == "v1" {
 				data.Data, data.From, data.To, data.Resolution, err = ms.Read(sel, query.Metric, req.From, req.To, 0)
 			} else {
@@ -380,9 +282,95 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 	bw := bufio.NewWriter(rw)
 	defer bw.Flush()
 	if err := json.NewEncoder(bw).Encode(response); err != nil {
-		log.Printf("handleQuery Response Encode Error: %s", err.Error())
+		log.Print(err)
 		return
 	}
+}
+
+// handleFree godoc
+// @summary
+// @tags free
+// @description This endpoint allows the users to free the Buffers from the
+// metric store. This endpoint offers the users to remove then systematically
+// and also allows then to prune the data under node, if they do not want to
+// remove the whole node.
+// @produce     json
+// @param       to        query    string        false  "up to timestamp"
+// @success     200            {string} string  "ok"
+// @failure     400            {object} api.ErrorResponse       "Bad Request"
+// @failure     401            {object} api.ErrorResponse       "Unauthorized"
+// @failure     403            {object} api.ErrorResponse       "Forbidden"
+// @failure     500            {object} api.ErrorResponse       "Internal Server Error"
+// @security    ApiKeyAuth
+// @router      /free/ [post]
+func freeMetrics(rw http.ResponseWriter, r *http.Request) {
+	rawTo := r.URL.Query().Get("to")
+	if rawTo == "" {
+		handleError(errors.New("'to' is a required query parameter"), http.StatusBadRequest, rw)
+		return
+	}
+
+	to, err := strconv.ParseInt(rawTo, 10, 64)
+	if err != nil {
+		handleError(err, http.StatusInternalServerError, rw)
+		return
+	}
+
+	bodyDec := json.NewDecoder(r.Body)
+	var selectors [][]string
+	err = bodyDec.Decode(&selectors)
+	if err != nil {
+		http.Error(rw, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	ms := metricstore.GetMemoryStore()
+	n := 0
+	for _, sel := range selectors {
+		bn, err := ms.Free(sel, to)
+		if err != nil {
+			handleError(err, http.StatusInternalServerError, rw)
+			return
+		}
+
+		n += bn
+	}
+
+	rw.WriteHeader(http.StatusOK)
+	fmt.Fprintf(rw, "buffers freed: %d\n", n)
+}
+
+// handleWrite godoc
+// @summary Receive metrics in InfluxDB line-protocol
+// @tags write
+// @description Write data to the in-memory store in the InfluxDB line-protocol using [this format](https://github.com/ClusterCockpit/cc-specifications/blob/master/metrics/lineprotocol_alternative.md)
+
+// @accept      plain
+// @produce     json
+// @param       cluster        query string false "If the lines in the body do not have a cluster tag, use this value instead."
+// @success     200            {string} string  "ok"
+// @failure     400            {object} api.ErrorResponse       "Bad Request"
+// @failure     401            {object} api.ErrorResponse       "Unauthorized"
+// @failure     403            {object} api.ErrorResponse       "Forbidden"
+// @failure     500            {object} api.ErrorResponse       "Internal Server Error"
+// @security    ApiKeyAuth
+// @router      /write/ [post]
+func writeMetrics(rw http.ResponseWriter, r *http.Request) {
+	bytes, err := io.ReadAll(r.Body)
+	rw.Header().Add("Content-Type", "application/json")
+	if err != nil {
+		handleError(err, http.StatusInternalServerError, rw)
+		return
+	}
+
+	ms := metricstore.GetMemoryStore()
+	dec := lineprotocol.NewDecoderWithBytes(bytes)
+	if err := metricstore.DecodeLine(dec, ms, r.URL.Query().Get("cluster")); err != nil {
+		cclog.Errorf("/api/write error: %s", err.Error())
+		handleError(err, http.StatusBadRequest, rw)
+		return
+	}
+	rw.WriteHeader(http.StatusOK)
 }
 
 // handleDebug godoc
@@ -399,7 +387,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 // @failure     500            {object} api.ErrorResponse       "Internal Server Error"
 // @security    ApiKeyAuth
 // @router      /debug/ [post]
-func handleDebug(rw http.ResponseWriter, r *http.Request) {
+func debugMetrics(rw http.ResponseWriter, r *http.Request) {
 	raw := r.URL.Query().Get("selector")
 	rw.Header().Add("Content-Type", "application/json")
 	selector := []string{}
@@ -407,7 +395,7 @@ func handleDebug(rw http.ResponseWriter, r *http.Request) {
 		selector = strings.Split(raw, ":")
 	}
 
-	ms := memorystore.GetMemoryStore()
+	ms := metricstore.GetMemoryStore()
 	if err := ms.DebugDump(bufio.NewWriter(rw), selector); err != nil {
 		handleError(err, http.StatusBadRequest, rw)
 		return
@@ -427,7 +415,7 @@ func handleDebug(rw http.ResponseWriter, r *http.Request) {
 // @failure     500            {object} api.ErrorResponse       "Internal Server Error"
 // @security    ApiKeyAuth
 // @router      /healthcheck/ [get]
-func handleHealthCheck(rw http.ResponseWriter, r *http.Request) {
+func metricsHealth(rw http.ResponseWriter, r *http.Request) {
 	rawCluster := r.URL.Query().Get("cluster")
 	rawNode := r.URL.Query().Get("node")
 
@@ -440,7 +428,7 @@ func handleHealthCheck(rw http.ResponseWriter, r *http.Request) {
 
 	selector := []string{rawCluster, rawNode}
 
-	ms := memorystore.GetMemoryStore()
+	ms := metricstore.GetMemoryStore()
 	if err := ms.HealthCheck(bufio.NewWriter(rw), selector); err != nil {
 		handleError(err, http.StatusBadRequest, rw)
 		return

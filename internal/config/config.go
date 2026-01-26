@@ -1,10 +1,16 @@
+// Copyright (C) NHR@FAU, University Erlangen-Nuremberg.
+// All rights reserved. This file is part of cc-metric-store.
+// Use of this source code is governed by a MIT-style
+// license that can be found in the LICENSE file.
+
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
-	"os"
+
+	cclog "github.com/ClusterCockpit/cc-lib/v2/ccLogger"
 )
 
 // For aggregation over multiple values at different cpus/sockets/..., not time!
@@ -46,77 +52,43 @@ type MetricConfig struct {
 	Offset int
 }
 
-type HttpConfig struct {
-	// Address to bind to, for example "0.0.0.0:8081"
-	Address string `json:"address"`
-
-	// If not the empty string, use https with this as the certificate file
-	CertFile string `json:"https-cert-file"`
-
-	// If not the empty string, use https with this as the key file
-	KeyFile string `json:"https-key-file"`
-}
-
-type NatsConfig struct {
-	// Address of the nats server
-	Address string `json:"address"`
-
-	// Username/Password, optional
-	Username string `json:"username"`
-	Password string `json:"password"`
-
-	//Creds file path
-	Credsfilepath string `json:"creds-file-path"`
-
-	Subscriptions []struct {
-		// Channel name
-		SubscribeTo string `json:"subscribe-to"`
-
-		// Allow lines without a cluster tag, use this as default, optional
-		ClusterTag string `json:"cluster-tag"`
-	} `json:"subscriptions"`
-}
+var metrics map[string]MetricConfig
 
 type Config struct {
-	Metrics     map[string]MetricConfig `json:"metrics"`
-	HttpConfig  *HttpConfig             `json:"http-api"`
-	Checkpoints struct {
-		FileFormat string `json:"file-format"`
-		Interval   string `json:"interval"`
-		RootDir    string `json:"directory"`
-		Restore    string `json:"restore"`
-	} `json:"checkpoints"`
-	Debug struct {
+	Address  string `json:"addr"`
+	CertFile string `json:"https-cert-file"`
+	KeyFile  string `json:"https-key-file"`
+	User     string `json:"user"`
+	Group    string `json:"group"`
+	Debug    struct {
 		DumpToFile string `json:"dump-to-file"`
 		EnableGops bool   `json:"gops"`
 	} `json:"debug"`
-	RetentionInMemory string `json:"retention-in-memory"`
-	JwtPublicKey      string `json:"jwt-public-key"`
-	Archive           struct {
-		Interval      string `json:"interval"`
-		RootDir       string `json:"directory"`
-		DeleteInstead bool   `json:"delete-instead"`
-	} `json:"archive"`
-	Nats []*NatsConfig `json:"nats"`
+	JwtPublicKey string `json:"jwt-public-key"`
 }
 
 var Keys Config
 
-func Init(file string) {
-	configFile, err := os.Open(file)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer configFile.Close()
-	dec := json.NewDecoder(configFile)
+func InitMetrics(metricConfig json.RawMessage) {
+	Validate(metricConfigSchema, metricConfig)
+	dec := json.NewDecoder(bytes.NewReader(metricConfig))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&Keys); err != nil {
-		log.Fatal(err)
+	if err := dec.Decode(&metrics); err != nil {
+		cclog.Abortf("Config Init: Could not decode config file '%s'.\nError: %s\n", metricConfig, err.Error())
 	}
 }
 
-func (c *Config) GetMetricFrequency(metricName string) (int64, error) {
-	if metric, ok := c.Metrics[metricName]; ok {
+func Init(mainConfig json.RawMessage) {
+	Validate(configSchema, mainConfig)
+	dec := json.NewDecoder(bytes.NewReader(mainConfig))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&Keys); err != nil {
+		cclog.Abortf("Config Init: Could not decode config file '%s'.\nError: %s\n", mainConfig, err.Error())
+	}
+}
+
+func GetMetricFrequency(metricName string) (int64, error) {
+	if metric, ok := metrics[metricName]; ok {
 		return metric.Frequency, nil
 	}
 	return 0, fmt.Errorf("metric %s not found", metricName)

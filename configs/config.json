@@ -1,185 +1,203 @@
 {
-    "metrics": {
-        "debug_metric": {
-            "frequency": 60,
-            "aggregation": "avg"
-        },
-        "clock": {
-            "frequency": 60,
-            "aggregation": "avg"
-        },
-        "cpu_idle": {
-            "frequency": 60,
-            "aggregation": "avg"
-        },
-        "cpu_iowait": {
-            "frequency": 60,
-            "aggregation": "avg"
-        },
-        "cpu_irq": {
-            "frequency": 60,
-            "aggregation": "avg"
-        },
-        "cpu_system": {
-            "frequency": 60,
-            "aggregation": "avg"
-        },
-        "cpu_user": {
-            "frequency": 60,
-            "aggregation": "avg"
-        },
-        "nv_mem_util": {
-            "frequency": 60,
-            "aggregation": "avg"
-        },
-        "nv_temp": {
-            "frequency": 60,
-            "aggregation": "avg"
-        },
-        "nv_sm_clock": {
-            "frequency": 60,
-            "aggregation": "avg"
-        },
-        "acc_utilization": {
-            "frequency": 60,
-            "aggregation": "avg"
-        },
-        "acc_mem_used": {
-            "frequency": 60,
-            "aggregation": "sum"
-        },
-        "acc_power": {
-            "frequency": 60,
-            "aggregation": "sum"
-        },
-        "flops_any": {
-            "frequency": 60,
-            "aggregation": "sum"
-        },
-        "flops_dp": {
-            "frequency": 60,
-            "aggregation": "sum"
-        },
-        "flops_sp": {
-            "frequency": 60,
-            "aggregation": "sum"
-        },
-        "ib_recv": {
-            "frequency": 60,
-            "aggregation": "sum"
-        },
-        "ib_xmit": {
-            "frequency": 60,
-            "aggregation": "sum"
-        },
-        "ib_recv_pkts": {
-            "frequency": 60,
-            "aggregation": "sum"
-        },
-        "ib_xmit_pkts": {
-            "frequency": 60,
-            "aggregation": "sum"
-        },
-        "cpu_power": {
-            "frequency": 60,
-            "aggregation": "sum"
-        },
-        "core_power": {
-            "frequency": 60,
-            "aggregation": "sum"
-        },
-        "mem_power": {
-            "frequency": 60,
-            "aggregation": "sum"
-        },
-        "ipc": {
-            "frequency": 60,
-            "aggregation": "avg"
-        },
-        "cpu_load": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "lustre_close": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "lustre_open": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "lustre_statfs": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "lustre_read_bytes": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "lustre_write_bytes": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "net_bw": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "file_bw": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "mem_bw": {
-            "frequency": 60,
-            "aggregation": "sum"
-        },
-        "mem_cached": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "mem_used": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "net_bytes_in": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "net_bytes_out": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "nfs4_read": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "nfs4_total": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "nfs4_write": {
-            "frequency": 60,
-            "aggregation": null
-        },
-        "vectorization_ratio": {
-            "frequency": 60,
-            "aggregation": "avg"
-        }
-    },
-    "checkpoints": {
-        "interval": "12h",
-        "directory": "./var/checkpoints",
-        "restore": "48h"
-    },
-    "archive": {
-        "interval": "50h",
-        "directory": "./var/archive"
-    },
-    "http-api": {
-        "address": "localhost:8082",
-        "https-cert-file": null,
-        "https-key-file": null
-    },
-    "retention-in-memory": "48h",
-    "nats": null,
+  "main": {
+    "addr": "0.0.0.0:443",
+    "https-cert-file": "/etc/letsencrypt/live/url/fullchain.pem",
+    "https-key-file": "/etc/letsencrypt/live/url/privkey.pem",
     "jwt-public-key": "kzfYrYy+TzpanWZHJ5qSdMj5uKUWgq74BWhQG6copP0="
+  },
+  "metrics": {
+    "debug_metric": {
+      "frequency": 60,
+      "aggregation": "avg"
+    },
+    "clock": {
+      "frequency": 60,
+      "aggregation": "avg"
+    },
+    "cpu_idle": {
+      "frequency": 60,
+      "aggregation": "avg"
+    },
+    "cpu_iowait": {
+      "frequency": 60,
+      "aggregation": "avg"
+    },
+    "cpu_irq": {
+      "frequency": 60,
+      "aggregation": "avg"
+    },
+    "cpu_system": {
+      "frequency": 60,
+      "aggregation": "avg"
+    },
+    "cpu_user": {
+      "frequency": 60,
+      "aggregation": "avg"
+    },
+    "nv_mem_util": {
+      "frequency": 60,
+      "aggregation": "avg"
+    },
+    "nv_temp": {
+      "frequency": 60,
+      "aggregation": "avg"
+    },
+    "nv_sm_clock": {
+      "frequency": 60,
+      "aggregation": "avg"
+    },
+    "acc_utilization": {
+      "frequency": 60,
+      "aggregation": "avg"
+    },
+    "acc_mem_used": {
+      "frequency": 60,
+      "aggregation": "sum"
+    },
+    "acc_power": {
+      "frequency": 60,
+      "aggregation": "sum"
+    },
+    "flops_any": {
+      "frequency": 60,
+      "aggregation": "sum"
+    },
+    "flops_dp": {
+      "frequency": 60,
+      "aggregation": "sum"
+    },
+    "flops_sp": {
+      "frequency": 60,
+      "aggregation": "sum"
+    },
+    "ib_recv": {
+      "frequency": 60,
+      "aggregation": "sum"
+    },
+    "ib_xmit": {
+      "frequency": 60,
+      "aggregation": "sum"
+    },
+    "ib_recv_pkts": {
+      "frequency": 60,
+      "aggregation": "sum"
+    },
+    "ib_xmit_pkts": {
+      "frequency": 60,
+      "aggregation": "sum"
+    },
+    "cpu_power": {
+      "frequency": 60,
+      "aggregation": "sum"
+    },
+    "core_power": {
+      "frequency": 60,
+      "aggregation": "sum"
+    },
+    "mem_power": {
+      "frequency": 60,
+      "aggregation": "sum"
+    },
+    "ipc": {
+      "frequency": 60,
+      "aggregation": "avg"
+    },
+    "cpu_load": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "lustre_close": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "lustre_open": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "lustre_statfs": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "lustre_read_bytes": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "lustre_write_bytes": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "net_bw": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "file_bw": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "mem_bw": {
+      "frequency": 60,
+      "aggregation": "sum"
+    },
+    "mem_cached": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "mem_used": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "net_bytes_in": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "net_bytes_out": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "nfs4_read": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "nfs4_total": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "nfs4_write": {
+      "frequency": 60,
+      "aggregation": null
+    },
+    "vectorization_ratio": {
+      "frequency": 60,
+      "aggregation": "avg"
+    }
+  },
+  "nats": {
+    "address": "nats://0.0.0.0:4222",
+    "username": "root",
+    "password": "root"
+  },
+  "metric-store": {
+    "checkpoints": {
+      "interval": "12h",
+      "directory": "./var/checkpoints"
+    },
+    "memory-cap": 100,
+    "retention-in-memory": "48h",
+    "cleanup": {
+      "mode": "archive",
+      "interval": "48h",
+      "directory": "./var/archive"
+    },
+    "nats-subscriptions": [
+      {
+        "subscribe-to": "hpc-nats",
+        "cluster-tag": "fritz"
+      },
+      {
+        "subscribe-to": "hpc-nats",
+        "cluster-tag": "alex"
+      }
+    ]
+  }
 }
+
