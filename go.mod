@@ -6,7 +6,7 @@ require (
 	github.com/ClusterCockpit/cc-backend v1.4.4-0.20260128102127-0d857b49a256
 	github.com/ClusterCockpit/cc-lib/v2 v2.2.1
 	github.com/golang-jwt/jwt/v4 v4.5.0
-	github.com/google/gops v0.3.28
+	github.com/google/gops v0.3.29
 	github.com/influxdata/line-protocol/v2 v2.2.1
 	github.com/santhosh-tekuri/jsonschema/v5 v5.3.1
 	github.com/swaggo/http-swagger v1.3.4
