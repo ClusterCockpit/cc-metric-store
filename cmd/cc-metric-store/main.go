@@ -19,6 +19,7 @@ import (
 	cclog "github.com/ClusterCockpit/cc-lib/v2/ccLogger"
 	"github.com/ClusterCockpit/cc-lib/v2/nats"
 	"github.com/ClusterCockpit/cc-lib/v2/runtime"
+	"github.com/ClusterCockpit/cc-metric-store/internal/api"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/google/gops/agent"
 )
@@ -43,12 +44,23 @@ func printVersion() {
 func runServer(ctx context.Context) error {
 	var wg sync.WaitGroup
 
-	// Initialize metric store if configuration is provided
-	mscfg := ccconf.GetPackageConfig("metric-store")
-	if mscfg != nil {
-		metricstore.Init(mscfg, &wg)
-	} else {
+	mscfg := ccconf.GetPackageConfig("metrics")
+	if mscfg == nil {
+		return fmt.Errorf("missing metrics configuration")
+	}
+	config.InitMetrics(mscfg)
+
+	mscfg = ccconf.GetPackageConfig("metric-store")
+	if mscfg == nil {
 		return fmt.Errorf("missing metricstore configuration")
+	}
+
+	metricstore.Init(mscfg, config.GetMetrics(), &wg)
+
+	if config.Keys.BackendURL != "" {
+		ms := metricstore.GetMemoryStore()
+		ms.SetNodeProvider(api.NewBackendNodeProvider(config.Keys.BackendURL))
+		cclog.Infof("Node provider configured with backend URL: %s", config.Keys.BackendURL)
 	}
 
 	// Initialize HTTP server

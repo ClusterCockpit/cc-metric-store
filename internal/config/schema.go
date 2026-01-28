@@ -29,6 +29,10 @@ var configSchema = `
       "description": "Drop root permissions once the port was taken. Only applicable if using privileged port.",
       "type": "string"
     },
+    "backend-url": {
+      "description": "URL of cc-backend for querying job information (e.g., 'https://localhost:8080').",
+      "type": "string"
+    },
     "debug": {
       "description": "Debug options.",
       "type": "object",

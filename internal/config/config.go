@@ -10,57 +10,20 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/ClusterCockpit/cc-backend/pkg/metricstore"
 	cclog "github.com/ClusterCockpit/cc-lib/v2/ccLogger"
 )
 
-// For aggregation over multiple values at different cpus/sockets/..., not time!
-type AggregationStrategy int
-
-const (
-	NoAggregation AggregationStrategy = iota
-	SumAggregation
-	AvgAggregation
-)
-
-func (as *AggregationStrategy) UnmarshalJSON(data []byte) error {
-	var str string
-	if err := json.Unmarshal(data, &str); err != nil {
-		return err
-	}
-
-	switch str {
-	case "":
-		*as = NoAggregation
-	case "sum":
-		*as = SumAggregation
-	case "avg":
-		*as = AvgAggregation
-	default:
-		return fmt.Errorf("invalid aggregation strategy: %#v", str)
-	}
-	return nil
-}
-
-type MetricConfig struct {
-	// Interval in seconds at which measurements will arive.
-	Frequency int64 `json:"frequency"`
-
-	// Can be 'sum', 'avg' or null. Describes how to aggregate metrics from the same timestep over the hierarchy.
-	Aggregation AggregationStrategy `json:"aggregation"`
-
-	// Private, used internally...
-	Offset int
-}
-
-var metrics map[string]MetricConfig
+var metrics map[string]metricstore.MetricConfig
 
 type Config struct {
-	Address  string `json:"addr"`
-	CertFile string `json:"https-cert-file"`
-	KeyFile  string `json:"https-key-file"`
-	User     string `json:"user"`
-	Group    string `json:"group"`
-	Debug    struct {
+	Address    string `json:"addr"`
+	CertFile   string `json:"https-cert-file"`
+	KeyFile    string `json:"https-key-file"`
+	User       string `json:"user"`
+	Group      string `json:"group"`
+	BackendURL string `json:"backend-url"`
+	Debug      struct {
 		DumpToFile string `json:"dump-to-file"`
 		EnableGops bool   `json:"gops"`
 	} `json:"debug"`
@@ -69,12 +32,31 @@ type Config struct {
 
 var Keys Config
 
+type metricConfigJSON struct {
+	Frequency   int64  `json:"frequency"`
+	Aggregation string `json:"aggregation"`
+}
+
 func InitMetrics(metricConfig json.RawMessage) {
 	Validate(metricConfigSchema, metricConfig)
+
+	var tempMetrics map[string]metricConfigJSON
 	dec := json.NewDecoder(bytes.NewReader(metricConfig))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&metrics); err != nil {
+	if err := dec.Decode(&tempMetrics); err != nil {
 		cclog.Abortf("Config Init: Could not decode config file '%s'.\nError: %s\n", metricConfig, err.Error())
+	}
+
+	metrics = make(map[string]metricstore.MetricConfig)
+	for name, cfg := range tempMetrics {
+		agg, err := metricstore.AssignAggregationStrategy(cfg.Aggregation)
+		if err != nil {
+			cclog.Warnf("Could not parse aggregation strategy for metric '%s': %s", name, err.Error())
+		}
+		metrics[name] = metricstore.MetricConfig{
+			Frequency:   cfg.Frequency,
+			Aggregation: agg,
+		}
 	}
 }
 
@@ -92,4 +74,8 @@ func GetMetricFrequency(metricName string) (int64, error) {
 		return metric.Frequency, nil
 	}
 	return 0, fmt.Errorf("metric %s not found", metricName)
+}
+
+func GetMetrics() map[string]metricstore.MetricConfig {
+	return metrics
 }
