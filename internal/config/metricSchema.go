@@ -18,7 +18,7 @@ var metricConfigSchema = `
       },
       "aggregation": {
         "description": "Aggregation strategy: 'sum', 'avg', or 'null'.",
-        "type": "string"
+        "type": ["string", "null"]
       }
     },
     "required": ["frequency", "aggregation"]

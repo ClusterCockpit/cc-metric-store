@@ -1,9 +1,37 @@
 {
   "main": {
-    "addr": "0.0.0.0:443",
-    "https-cert-file": "/etc/letsencrypt/live/url/fullchain.pem",
-    "https-key-file": "/etc/letsencrypt/live/url/privkey.pem",
+    "addr": "0.0.0.0:8082",
+    "https-cert-file": "",
+    "https-key-file": "",
     "jwt-public-key": "kzfYrYy+TzpanWZHJ5qSdMj5uKUWgq74BWhQG6copP0="
+  },
+  "nats": {
+    "address": "nats://0.0.0.0:4222",
+    "username": "root",
+    "password": "root"
+  },
+  "metric-store": {
+    "checkpoints": {
+      "interval": "12h",
+      "directory": "./var/checkpoints"
+    },
+    "memory-cap": 100,
+    "retention-in-memory": "48h",
+    "cleanup": {
+      "mode": "archive",
+      "interval": "48h",
+      "directory": "./var/archive"
+    },
+    "nats-subscriptions": [
+      {
+        "subscribe-to": "hpc-nats",
+        "cluster-tag": "fritz"
+      },
+      {
+        "subscribe-to": "hpc-nats",
+        "cluster-tag": "alex"
+      }
+    ]
   },
   "metrics": {
     "debug_metric": {
@@ -170,34 +198,5 @@
       "frequency": 60,
       "aggregation": "avg"
     }
-  },
-  "nats": {
-    "address": "nats://0.0.0.0:4222",
-    "username": "root",
-    "password": "root"
-  },
-  "metric-store": {
-    "checkpoints": {
-      "interval": "12h",
-      "directory": "./var/checkpoints"
-    },
-    "memory-cap": 100,
-    "retention-in-memory": "48h",
-    "cleanup": {
-      "mode": "archive",
-      "interval": "48h",
-      "directory": "./var/archive"
-    },
-    "nats-subscriptions": [
-      {
-        "subscribe-to": "hpc-nats",
-        "cluster-tag": "fritz"
-      },
-      {
-        "subscribe-to": "hpc-nats",
-        "cluster-tag": "alex"
-      }
-    ]
   }
 }
-

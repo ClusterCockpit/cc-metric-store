@@ -416,21 +416,31 @@ func debugMetrics(rw http.ResponseWriter, r *http.Request) {
 // @security    ApiKeyAuth
 // @router      /healthcheck/ [get]
 func metricsHealth(rw http.ResponseWriter, r *http.Request) {
-	rawCluster := r.URL.Query().Get("cluster")
-	rawNode := r.URL.Query().Get("node")
+	req := metricstore.HealthCheckReq{}
 
-	if rawCluster == "" || rawNode == "" {
-		handleError(errors.New("'cluster' and 'node' are required query parameter"), http.StatusBadRequest, rw)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	if err := dec.Decode(&req); err != nil {
+		handleError(fmt.Errorf("parsing request body failed: %w", err),
+			http.StatusBadRequest, rw)
 		return
 	}
 
 	rw.Header().Add("Content-Type", "application/json")
 
-	selector := []string{rawCluster, rawNode}
-
 	ms := metricstore.GetMemoryStore()
-	if err := ms.HealthCheck(bufio.NewWriter(rw), selector); err != nil {
+	results, err := ms.HealthCheck(req.Cluster, req.Nodes, req.MetricNames)
+	if err != nil {
 		handleError(err, http.StatusBadRequest, rw)
+		return
+	}
+
+	rw.Header().Set("Content-Type", "application/json")
+	bw := bufio.NewWriter(rw)
+	defer bw.Flush()
+	if err := json.NewEncoder(bw).Encode(results); err != nil {
+		log.Print(err)
 		return
 	}
 }
