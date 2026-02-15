@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"sync"
 	"syscall"
 
@@ -22,6 +23,10 @@ import (
 	"github.com/ClusterCockpit/cc-metric-store/internal/api"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
 	"github.com/google/gops/agent"
+)
+
+const (
+	envGOGC = "GOGC"
 )
 
 var (
@@ -56,6 +61,11 @@ func runServer(ctx context.Context) error {
 	}
 
 	metricstore.Init(mscfg, config.GetMetrics(), &wg)
+
+	// Set GC percent if not configured
+	if os.Getenv(envGOGC) == "" {
+		debug.SetGCPercent(15)
+	}
 
 	if config.Keys.BackendURL != "" {
 		ms := metricstore.GetMemoryStore()
