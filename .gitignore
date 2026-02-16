@@ -26,3 +26,5 @@ migrateTimestamps.pl
 sample.txt
 sample_alex.txt
 sample_fritz.txt
+
+test_ccms_write_api.sh
