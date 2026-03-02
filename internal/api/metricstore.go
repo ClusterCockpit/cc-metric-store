@@ -21,8 +21,7 @@ import (
 	cclog "github.com/ClusterCockpit/cc-lib/v2/ccLogger"
 	"github.com/ClusterCockpit/cc-lib/v2/schema"
 	"github.com/ClusterCockpit/cc-lib/v2/util"
-
-	"github.com/influxdata/line-protocol/v2/lineprotocol"
+	"github.com/ClusterCockpit/cc-line-protocol/v2/lineprotocol"
 )
 
 // ErrorResponse model
@@ -36,6 +35,8 @@ type ErrorResponse struct {
 type DefaultAPIResponse struct {
 	Message string `json:"msg"`
 }
+
+var ErrNoHostOrMetric error = errors.New("[METRICSTORE]> metric or host not found")
 
 // handleError writes a standardized JSON error response with the given status code.
 // It logs the error at WARN level and ensures proper Content-Type headers are set.
@@ -249,15 +250,18 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 		res := make([]APIMetricData, 0, len(sels))
 		for _, sel := range sels {
 			data := APIMetricData{}
-			if ver == "v1" {
-				data.Data, data.From, data.To, data.Resolution, err = ms.Read(sel, query.Metric, req.From, req.To, 0)
-			} else {
-				data.Data, data.From, data.To, data.Resolution, err = ms.Read(sel, query.Metric, req.From, req.To, query.Resolution)
-			}
+
+			data.Data, data.From, data.To, data.Resolution, err = ms.Read(sel, query.Metric, req.From, req.To, query.Resolution)
 			if err != nil {
-				msg := err.Error()
-				data.Error = &msg
-				res = append(res, data)
+				// Skip Error If Just Missing Host or Metric, Continue
+				// Empty Return For Metric Handled Gracefully By Frontend
+				if err != ErrNoHostOrMetric {
+					msg := err.Error()
+					data.Error = &msg
+					res = append(res, data)
+				} else {
+					cclog.Warnf("failed to fetch '%s' from host '%s' (cluster: %s): %s", query.Metric, query.Hostname, req.Cluster, err.Error())
+				}
 				continue
 			}
 
