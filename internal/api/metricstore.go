@@ -36,8 +36,6 @@ type DefaultAPIResponse struct {
 	Message string `json:"msg"`
 }
 
-var ErrNoHostOrMetric error = errors.New("[METRICSTORE]> metric or host not found")
-
 // handleError writes a standardized JSON error response with the given status code.
 // It logs the error at WARN level and ensures proper Content-Type headers are set.
 func handleError(err error, statusCode int, rw http.ResponseWriter) {
@@ -255,7 +253,7 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				// Skip Error If Just Missing Host or Metric, Continue
 				// Empty Return For Metric Handled Gracefully By Frontend
-				if err != ErrNoHostOrMetric {
+				if err != metricstore.ErrNoHostOrMetric {
 					msg := err.Error()
 					data.Error = &msg
 					res = append(res, data)
