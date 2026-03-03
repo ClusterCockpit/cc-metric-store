@@ -446,3 +446,24 @@ func metricsHealth(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+// queryParam extracts a single query parameter value from a raw query string
+// without allocating a url.Values map.
+func queryParam(rawQuery, key string) string {
+	for rawQuery != "" {
+		var kv string
+		if before, after, ok := strings.Cut(rawQuery, "&"); ok {
+			kv, rawQuery = before, after
+		} else {
+			kv, rawQuery = rawQuery, ""
+		}
+		if before, after, ok := strings.Cut(kv, "="); ok {
+			if before == key {
+				return after
+			}
+		} else if kv == key {
+			return ""
+		}
+	}
+	return ""
+}
