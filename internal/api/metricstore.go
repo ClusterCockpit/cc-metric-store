@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"math"
 	"net/http"
@@ -22,7 +21,7 @@ import (
 	"github.com/ClusterCockpit/cc-lib/v2/schema"
 	"github.com/ClusterCockpit/cc-lib/v2/util"
 
-	"github.com/influxdata/line-protocol/v2/lineprotocol"
+	"github.com/ClusterCockpit/cc-line-protocol/v2/lineprotocol"
 )
 
 // ErrorResponse model
@@ -356,16 +355,17 @@ func freeMetrics(rw http.ResponseWriter, r *http.Request) {
 // @security    ApiKeyAuth
 // @router      /write/ [post]
 func writeMetrics(rw http.ResponseWriter, r *http.Request) {
-	bytes, err := io.ReadAll(r.Body)
 	rw.Header().Add("Content-Type", "application/json")
-	if err != nil {
-		handleError(err, http.StatusInternalServerError, rw)
-		return
-	}
 
+	// Extract the "cluster" query parameter without allocating a url.Values map.
+	cluster := queryParam(r.URL.RawQuery, "cluster")
+
+	// Stream directly from the request body instead of copying it into a
+	// temporary buffer via io.ReadAll. The line-protocol decoder supports
+	// io.Reader natively, so this avoids the largest heap allocation.
 	ms := metricstore.GetMemoryStore()
-	dec := lineprotocol.NewDecoderWithBytes(bytes)
-	if err := metricstore.DecodeLine(dec, ms, r.URL.Query().Get("cluster")); err != nil {
+	dec := lineprotocol.NewDecoder(r.Body)
+	if err := metricstore.DecodeLine(dec, ms, cluster); err != nil {
 		cclog.Errorf("/api/write error: %s", err.Error())
 		handleError(err, http.StatusBadRequest, rw)
 		return
