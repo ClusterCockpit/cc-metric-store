@@ -15,15 +15,15 @@ import (
 // BackendNodeProvider implements metricstore.NodeProvider by querying
 // the cc-backend /api/jobs/used_nodes endpoint.
 type BackendNodeProvider struct {
-	backendUrl string
+	backendURL string
 	client     *http.Client
 }
 
 // NewBackendNodeProvider creates a new BackendNodeProvider that queries
 // the given cc-backend URL for used nodes information.
-func NewBackendNodeProvider(backendUrl string) *BackendNodeProvider {
+func NewBackendNodeProvider(backendURL string) *BackendNodeProvider {
 	return &BackendNodeProvider{
-		backendUrl: backendUrl,
+		backendURL: backendURL,
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -33,7 +33,7 @@ func NewBackendNodeProvider(backendUrl string) *BackendNodeProvider {
 // GetUsedNodes returns a map of cluster names to sorted lists of unique hostnames
 // that are currently in use by jobs that started before the given timestamp.
 func (p *BackendNodeProvider) GetUsedNodes(ts int64) (map[string][]string, error) {
-	url := fmt.Sprintf("%s/api/jobs/used_nodes?ts=%d", p.backendUrl, ts)
+	url := fmt.Sprintf("%s/api/jobs/used_nodes?ts=%d", p.backendURL, ts)
 
 	resp, err := p.client.Get(url)
 	if err != nil {

@@ -39,7 +39,7 @@ func authHandler(next http.Handler, publicKey ed25519.PublicKey) http.Handler {
 		// In case expiration and so on are specified, the Parse function
 		// already returns an error for expired tokens.
 		var err error
-		token, err = jwt.Parse(rawtoken, func(t *jwt.Token) (interface{}, error) {
+		token, err = jwt.Parse(rawtoken, func(t *jwt.Token) (any, error) {
 			if t.Method != jwt.SigningMethodEdDSA {
 				return nil, errors.New("only Ed25519/EdDSA supported")
 			}
