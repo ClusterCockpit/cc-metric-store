@@ -8,11 +8,6 @@ part of the [ClusterCockpit suite](https://github.com/ClusterCockpit). As all
 data is kept in-memory, accessing it is very fast. It also provides topology aware
 aggregations over time _and_ nodes/sockets/cpus.
 
-There are major limitations: Data only gets written to disk at periodic
-checkpoints (or via WAL on every write), not immediately as it is received.
-Only the configured retention window is kept in memory.
-Still metric data is kept as long as running jobs is using it.
-
 The storage engine is provided by the
 [cc-backend](https://github.com/ClusterCockpit/cc-backend) package
 (`cc-backend/pkg/metricstore`). This repository provides the HTTP API wrapper.
