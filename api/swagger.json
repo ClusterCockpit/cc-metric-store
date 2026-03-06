@@ -19,11 +19,6 @@
     "paths": {
         "/debug/": {
             "post": {
-                "security": [
-                    {
-                        "ApiKeyAuth": []
-                    }
-                ],
                 "description": "This endpoint allows the users to print the content of",
                 "produces": [
                     "application/json"
@@ -71,16 +66,16 @@
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/free/": {
-            "post": {
+                },
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/free/": {
+            "post": {
                 "description": "This endpoint allows the users to free the Buffers from the",
                 "produces": [
                     "application/json"
@@ -127,16 +122,16 @@
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/healthcheck/": {
-            "get": {
+                },
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/healthcheck/": {
+            "get": {
                 "description": "This endpoint allows the users to check if a node is healthy",
                 "produces": [
                     "application/json"
@@ -184,16 +179,16 @@
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/query/": {
-            "get": {
+                },
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/query/": {
+            "get": {
                 "description": "This endpoint allows the users to retrieve data from the",
                 "consumes": [
                     "application/json"
@@ -212,7 +207,7 @@
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/api.ApiQueryRequest"
+                            "$ref": "#/definitions/api.APIQueryRequest"
                         }
                     }
                 ],
@@ -220,7 +215,7 @@
                     "200": {
                         "description": "API query response object",
                         "schema": {
-                            "$ref": "#/definitions/api.ApiQueryResponse"
+                            "$ref": "#/definitions/api.APIQueryResponse"
                         }
                     },
                     "400": {
@@ -247,16 +242,16 @@
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
-                }
-            }
-        },
-        "/write/": {
-            "post": {
+                },
                 "security": [
                     {
                         "ApiKeyAuth": []
                     }
-                ],
+                ]
+            }
+        },
+        "/write/": {
+            "post": {
                 "consumes": [
                     "text/plain"
                 ],
@@ -302,12 +297,17 @@
                             "$ref": "#/definitions/api.ErrorResponse"
                         }
                     }
-                }
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ]
             }
         }
     },
     "definitions": {
-        "api.ApiMetricData": {
+        "api.APIMetricData": {
             "type": "object",
             "properties": {
                 "avg": {
@@ -339,7 +339,7 @@
                 }
             }
         },
-        "api.ApiQuery": {
+        "api.APIQuery": {
             "type": "object",
             "properties": {
                 "aggreg": {
@@ -377,7 +377,7 @@
                 }
             }
         },
-        "api.ApiQueryRequest": {
+        "api.APIQueryRequest": {
             "type": "object",
             "properties": {
                 "cluster": {
@@ -395,7 +395,7 @@
                 "queries": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/api.ApiQuery"
+                        "$ref": "#/definitions/api.APIQuery"
                     }
                 },
                 "to": {
@@ -412,13 +412,13 @@
                 }
             }
         },
-        "api.ApiQueryResponse": {
+        "api.APIQueryResponse": {
             "type": "object",
             "properties": {
                 "queries": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/api.ApiQuery"
+                        "$ref": "#/definitions/api.APIQuery"
                     }
                 },
                 "results": {
@@ -426,7 +426,7 @@
                     "items": {
                         "type": "array",
                         "items": {
-                            "$ref": "#/definitions/api.ApiMetricData"
+                            "$ref": "#/definitions/api.APIMetricData"
                         }
                     }
                 }

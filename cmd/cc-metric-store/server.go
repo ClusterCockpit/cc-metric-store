@@ -21,7 +21,7 @@ import (
 	"github.com/ClusterCockpit/cc-lib/v2/runtime"
 	"github.com/ClusterCockpit/cc-metric-store/internal/api"
 	"github.com/ClusterCockpit/cc-metric-store/internal/config"
-	httpSwagger "github.com/swaggo/http-swagger"
+	httpSwagger "github.com/swaggo/http-swagger/v2"
 )
 
 // Server encapsulates the HTTP server state and dependencies
