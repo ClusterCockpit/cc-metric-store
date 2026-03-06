@@ -1,7 +1,8 @@
 # `cc-metric-store` version 1.5.0
 
 This is a major release of `cc-metric-store`, the metric timeseries cache
-implementation of ClusterCockpit.
+implementation of ClusterCockpit. Since the storage engine is now part of
+`cc-backend` we will follow the version number of `cc-backend`.
 For release specific notes visit the [ClusterCockpit Documentation](https://clusterockpit.org/docs/release/).
 
 ## Breaking changes
