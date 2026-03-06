@@ -1,0 +1,32 @@
+{
+  "cli_version": "0.4.9",
+  "checkpoint_id": "1f0df6df7655",
+  "session_id": "5bdec311-7e4d-4543-91ea-fce0dbab2f32",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-03T06:37:54.337631Z",
+  "branch": "dev",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "go.mod",
+    "go.sum",
+    "internal/api/metricstore.go"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "603a18128272",
+  "token_usage": {
+    "input_tokens": 32,
+    "cache_creation_tokens": 23610,
+    "cache_read_tokens": 832397,
+    "output_tokens": 4505,
+    "api_call_count": 30
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-03T06:37:54.287676Z",
+    "agent_lines": 51,
+    "human_added": 0,
+    "human_modified": 5,
+    "human_removed": 0,
+    "total_committed": 56,
+    "agent_percentage": 91.07142857142857
+  }
+}
