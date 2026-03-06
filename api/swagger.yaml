@@ -1,6 +1,6 @@
 basePath: /api/
 definitions:
-  api.ApiMetricData:
+  api.APIMetricData:
     properties:
       avg:
         type: number
@@ -21,7 +21,7 @@ definitions:
       to:
         type: integer
     type: object
-  api.ApiQuery:
+  api.APIQuery:
     properties:
       aggreg:
         type: boolean
@@ -46,7 +46,7 @@ definitions:
           type: string
         type: array
     type: object
-  api.ApiQueryRequest:
+  api.APIQueryRequest:
     properties:
       cluster:
         type: string
@@ -58,7 +58,7 @@ definitions:
         type: integer
       queries:
         items:
-          $ref: '#/definitions/api.ApiQuery'
+          $ref: '#/definitions/api.APIQuery'
         type: array
       to:
         type: integer
@@ -69,16 +69,16 @@ definitions:
       with-stats:
         type: boolean
     type: object
-  api.ApiQueryResponse:
+  api.APIQueryResponse:
     properties:
       queries:
         items:
-          $ref: '#/definitions/api.ApiQuery'
+          $ref: '#/definitions/api.APIQuery'
         type: array
       results:
         items:
           items:
-            $ref: '#/definitions/api.ApiMetricData'
+            $ref: '#/definitions/api.APIMetricData'
           type: array
         type: array
     type: object
@@ -222,14 +222,14 @@ paths:
         name: request
         required: true
         schema:
-          $ref: '#/definitions/api.ApiQueryRequest'
+          $ref: '#/definitions/api.APIQueryRequest'
       produces:
       - application/json
       responses:
         "200":
           description: API query response object
           schema:
-            $ref: '#/definitions/api.ApiQueryResponse'
+            $ref: '#/definitions/api.APIQueryResponse'
         "400":
           description: Bad Request
           schema:

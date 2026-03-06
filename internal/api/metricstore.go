@@ -51,13 +51,13 @@ func handleError(err error, statusCode int, rw http.ResponseWriter) {
 
 type APIMetricData struct {
 	Error      *string           `json:"error,omitempty"`
-	Data       schema.FloatArray `json:"data,omitempty"`
+	Data       schema.FloatArray `json:"data,omitempty"       swaggertype:"array,number"`
 	From       int64             `json:"from"`
 	To         int64             `json:"to"`
 	Resolution int64             `json:"resolution"`
-	Avg        schema.Float      `json:"avg"`
-	Min        schema.Float      `json:"min"`
-	Max        schema.Float      `json:"max"`
+	Avg        schema.Float      `json:"avg"                  swaggertype:"number"`
+	Min        schema.Float      `json:"min"                  swaggertype:"number"`
+	Max        schema.Float      `json:"max"                  swaggertype:"number"`
 }
 
 // TODO: Optimize this, just like the stats endpoint!
@@ -141,7 +141,7 @@ type APIQuery struct {
 	Resolution  int64        `json:"resolution"`
 	TypeIds     []string     `json:"type-ids,omitempty"`
 	SubTypeIds  []string     `json:"subtype-ids,omitempty"`
-	ScaleFactor schema.Float `json:"scale-by,omitempty"`
+	ScaleFactor schema.Float `json:"scale-by,omitempty" swaggertype:"number"`
 	Aggregate   bool         `json:"aggreg"`
 }
 
@@ -153,12 +153,12 @@ type APIQuery struct {
 // specified interval requested by the user
 // @accept      json
 // @produce     json
-// @param       request body     api.ApiQueryRequest  true "API query payload object"
-// @success     200            {object} api.ApiQueryResponse  "API query response object"
-// @failure     400            {object} api.ErrorResponse       "Bad Request"
-// @failure     401   		   {object} api.ErrorResponse       "Unauthorized"
-// @failure     403            {object} api.ErrorResponse       "Forbidden"
-// @failure     500            {object} api.ErrorResponse       "Internal Server Error"
+// @param       request body     APIQueryRequest  true "API query payload object"
+// @success     200            {object} APIQueryResponse  "API query response object"
+// @failure     400            {object} ErrorResponse       "Bad Request"
+// @failure     401   		   {object} ErrorResponse       "Unauthorized"
+// @failure     403            {object} ErrorResponse       "Forbidden"
+// @failure     500            {object} ErrorResponse       "Internal Server Error"
 // @security    ApiKeyAuth
 // @router      /query/ [get]
 func handleQuery(rw http.ResponseWriter, r *http.Request) {
@@ -298,10 +298,10 @@ func handleQuery(rw http.ResponseWriter, r *http.Request) {
 // @produce     json
 // @param       to        query    string        false  "up to timestamp"
 // @success     200            {string} string  "ok"
-// @failure     400            {object} api.ErrorResponse       "Bad Request"
-// @failure     401            {object} api.ErrorResponse       "Unauthorized"
-// @failure     403            {object} api.ErrorResponse       "Forbidden"
-// @failure     500            {object} api.ErrorResponse       "Internal Server Error"
+// @failure     400            {object} ErrorResponse       "Bad Request"
+// @failure     401            {object} ErrorResponse       "Unauthorized"
+// @failure     403            {object} ErrorResponse       "Forbidden"
+// @failure     500            {object} ErrorResponse       "Internal Server Error"
 // @security    ApiKeyAuth
 // @router      /free/ [post]
 func freeMetrics(rw http.ResponseWriter, r *http.Request) {
@@ -350,10 +350,10 @@ func freeMetrics(rw http.ResponseWriter, r *http.Request) {
 // @produce     json
 // @param       cluster        query string false "If the lines in the body do not have a cluster tag, use this value instead."
 // @success     200            {string} string  "ok"
-// @failure     400            {object} api.ErrorResponse       "Bad Request"
-// @failure     401            {object} api.ErrorResponse       "Unauthorized"
-// @failure     403            {object} api.ErrorResponse       "Forbidden"
-// @failure     500            {object} api.ErrorResponse       "Internal Server Error"
+// @failure     400            {object} ErrorResponse       "Bad Request"
+// @failure     401            {object} ErrorResponse       "Unauthorized"
+// @failure     403            {object} ErrorResponse       "Forbidden"
+// @failure     500            {object} ErrorResponse       "Internal Server Error"
 // @security    ApiKeyAuth
 // @router      /write/ [post]
 func writeMetrics(rw http.ResponseWriter, r *http.Request) {
@@ -383,10 +383,10 @@ func writeMetrics(rw http.ResponseWriter, r *http.Request) {
 // @produce     json
 // @param       selector        query    string            false "Selector"
 // @success     200            {string} string  "Debug dump"
-// @failure     400            {object} api.ErrorResponse       "Bad Request"
-// @failure     401            {object} api.ErrorResponse       "Unauthorized"
-// @failure     403            {object} api.ErrorResponse       "Forbidden"
-// @failure     500            {object} api.ErrorResponse       "Internal Server Error"
+// @failure     400            {object} ErrorResponse       "Bad Request"
+// @failure     401            {object} ErrorResponse       "Unauthorized"
+// @failure     403            {object} ErrorResponse       "Forbidden"
+// @failure     500            {object} ErrorResponse       "Internal Server Error"
 // @security    ApiKeyAuth
 // @router      /debug/ [post]
 func debugMetrics(rw http.ResponseWriter, r *http.Request) {
@@ -411,10 +411,10 @@ func debugMetrics(rw http.ResponseWriter, r *http.Request) {
 // @produce     json
 // @param       selector        query    string            false "Selector"
 // @success     200            {string} string  "Debug dump"
-// @failure     400            {object} api.ErrorResponse       "Bad Request"
-// @failure     401            {object} api.ErrorResponse       "Unauthorized"
-// @failure     403            {object} api.ErrorResponse       "Forbidden"
-// @failure     500            {object} api.ErrorResponse       "Internal Server Error"
+// @failure     400            {object} ErrorResponse       "Bad Request"
+// @failure     401            {object} ErrorResponse       "Unauthorized"
+// @failure     403            {object} ErrorResponse       "Forbidden"
+// @failure     500            {object} ErrorResponse       "Internal Server Error"
 // @security    ApiKeyAuth
 // @router      /healthcheck/ [get]
 func metricsHealth(rw http.ResponseWriter, r *http.Request) {
