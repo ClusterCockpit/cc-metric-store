@@ -1,0 +1,40 @@
+{
+  "cli_version": "0.4.8",
+  "checkpoint_id": "37abb99fe6a7",
+  "session_id": "115dd1c6-c94f-4019-8b97-3e2f24b9321b",
+  "strategy": "manual-commit",
+  "created_at": "2026-03-06T11:12:48.843089Z",
+  "branch": "dev",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Makefile",
+    "ReleaseNotes.md",
+    "api/swagger.json",
+    "api/swagger.yaml",
+    "cmd/cc-metric-store/server.go",
+    "go.mod",
+    "go.sum",
+    "internal/api/api.go",
+    "internal/api/docs.go",
+    "internal/api/metricstore.go",
+    "tools/tools.go"
+  ],
+  "agent": "Claude Code",
+  "turn_id": "a30f867a81a7",
+  "token_usage": {
+    "input_tokens": 55,
+    "cache_creation_tokens": 60795,
+    "cache_read_tokens": 2090443,
+    "output_tokens": 13021,
+    "api_call_count": 49
+  },
+  "initial_attribution": {
+    "calculated_at": "2026-03-06T11:12:48.718233Z",
+    "agent_lines": 63,
+    "human_added": 0,
+    "human_modified": 5,
+    "human_removed": 129,
+    "total_committed": 68,
+    "agent_percentage": 92.64705882352942
+  }
+}

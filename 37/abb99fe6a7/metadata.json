@@ -1,0 +1,36 @@
+{
+  "cli_version": "0.4.8",
+  "checkpoint_id": "37abb99fe6a7",
+  "strategy": "manual-commit",
+  "branch": "dev",
+  "checkpoints_count": 1,
+  "files_touched": [
+    "Makefile",
+    "ReleaseNotes.md",
+    "api/swagger.json",
+    "api/swagger.yaml",
+    "cmd/cc-metric-store/server.go",
+    "go.mod",
+    "go.sum",
+    "internal/api/api.go",
+    "internal/api/docs.go",
+    "internal/api/metricstore.go",
+    "tools/tools.go"
+  ],
+  "sessions": [
+    {
+      "metadata": "/37/abb99fe6a7/0/metadata.json",
+      "transcript": "/37/abb99fe6a7/0/full.jsonl",
+      "context": "/37/abb99fe6a7/0/context.md",
+      "content_hash": "/37/abb99fe6a7/0/content_hash.txt",
+      "prompt": "/37/abb99fe6a7/0/prompt.txt"
+    }
+  ],
+  "token_usage": {
+    "input_tokens": 55,
+    "cache_creation_tokens": 60795,
+    "cache_read_tokens": 2090443,
+    "output_tokens": 13021,
+    "api_call_count": 49
+  }
+}
