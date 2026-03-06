@@ -3,7 +3,7 @@
   "checkpoint_id": "37abb99fe6a7",
   "strategy": "manual-commit",
   "branch": "dev",
-  "checkpoints_count": 1,
+  "checkpoints_count": 2,
   "files_touched": [
     "Makefile",
     "ReleaseNotes.md",
@@ -24,13 +24,20 @@
       "context": "/37/abb99fe6a7/0/context.md",
       "content_hash": "/37/abb99fe6a7/0/content_hash.txt",
       "prompt": "/37/abb99fe6a7/0/prompt.txt"
+    },
+    {
+      "metadata": "/37/abb99fe6a7/1/metadata.json",
+      "transcript": "/37/abb99fe6a7/1/full.jsonl",
+      "context": "/37/abb99fe6a7/1/context.md",
+      "content_hash": "/37/abb99fe6a7/1/content_hash.txt",
+      "prompt": "/37/abb99fe6a7/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 55,
-    "cache_creation_tokens": 60795,
-    "cache_read_tokens": 2090443,
-    "output_tokens": 13021,
-    "api_call_count": 49
+    "input_tokens": 3223,
+    "cache_creation_tokens": 79501,
+    "cache_read_tokens": 2202940,
+    "output_tokens": 15851,
+    "api_call_count": 59
   }
 }
