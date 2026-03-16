@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/ClusterCockpit/cc-backend v1.5.0
-	github.com/ClusterCockpit/cc-lib/v2 v2.8.0
+	github.com/ClusterCockpit/cc-lib/v2 v2.9.0
 	github.com/ClusterCockpit/cc-line-protocol/v2 v2.4.0
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/gops v0.3.29
