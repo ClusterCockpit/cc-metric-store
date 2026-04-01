@@ -39,6 +39,7 @@ It supports the following targets:
 ./cc-metric-store -logdate                     # Add date and time to log messages
 ./cc-metric-store -version                     # Show version information and exit
 ./cc-metric-store -gops                        # Enable gops agent for debugging
+./cc-metric-store -cleanup-checkpoints         # Delete/archive old checkpoints per retention settings, then exit
 ```
 
 ## REST API Endpoints
@@ -174,9 +175,9 @@ Per-metric configuration. Each key is the metric name:
 }
 ```
 
-- `checkpoints.file-format`: Checkpoint format: `"json"` (default, human-readable) or `"wal"` (binary WAL, crash-safe). See [Checkpoint formats](#checkpoint-formats) below.
+- `checkpoints.file-format`: Checkpoint format: `"wal"` (default, binary WAL, crash-safe) or `"json"` (human-readable). See [Checkpoint formats](#checkpoint-formats) below.
 - `checkpoints.directory`: Root directory for checkpoint files (organized as `<dir>/<cluster>/<host>/`)
-- `memory-cap`: Approximate memory cap in MB for metric buffers
+- `memory-cap`: Memory cap in GB for metric buffers
 - `retention-in-memory`: How long to keep data in memory (e.g. `"48h"`)
 - `num-workers`: Number of parallel workers for checkpoint/archive I/O (0 = auto, capped at 10)
 - `cleanup.mode`: What to do with data older than `retention-in-memory`: `"archive"` (write Parquet) or `"delete"`
@@ -187,12 +188,7 @@ Per-metric configuration. Each key is the metric name:
 
 The `checkpoints.file-format` field controls how in-memory data is persisted to disk.
 
-**`"json"` (default)** — human-readable JSON snapshots written periodically. Each
-snapshot is stored as `<dir>/<cluster>/<host>/<timestamp>.json` and contains the
-full metric hierarchy. Easy to inspect and recover manually, but larger on disk
-and slower to write.
-
-**`"wal"`** — binary Write-Ahead Log format designed for crash safety. Two file
+**`"wal"` (default)** — binary Write-Ahead Log format designed for crash safety. Two file
 types are used per host:
 
 - `current.wal` — append-only binary log. Every incoming data point is appended
@@ -206,9 +202,11 @@ On startup the most recent `.bin` snapshot is loaded, then any remaining WAL
 entries are replayed on top. The WAL is rotated (old file deleted, new one
 started) after each successful snapshot.
 
-The `"wal"` option is the default and will be the only supported option in the
-future. The `"json"` checkpoint format is still provided to migrate from
-previous cc-metric-store version.
+**`"json"`** — human-readable JSON snapshots written periodically. Each snapshot
+is stored as `<dir>/<cluster>/<host>/<timestamp>.json` and contains the full
+metric hierarchy. Easy to inspect and recover manually, but larger on disk and
+slower to write. Still provided to migrate from previous installations; `"wal"`
+will be the only supported format in a future release.
 
 ### Parquet archive
 
