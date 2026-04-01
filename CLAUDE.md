@@ -66,7 +66,7 @@ Data is accessed via hierarchical selectors:
 Config file structure (see `configs/config.json`):
 - `main` - Server address, TLS certs, JWT public key, user/group for privilege drop
 - `metrics` - Per-metric frequency and aggregation strategy (sum/avg/null)
-- `metric-store` - Checkpoints, memory cap, retention, cleanup mode, NATS subscriptions
+- `metric-store` - Checkpoints (`file-format` "wal"(default)/"json", `directory`, `max-wal-size`), `checkpoint-interval`, `memory-cap` (GB), `retention-in-memory`, `num-workers`, cleanup (`mode`, `directory`), `nats-subscriptions`
 - `nats` - Optional NATS connection for receiving metrics
 
 ## Test JWT

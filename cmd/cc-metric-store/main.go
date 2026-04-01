@@ -7,6 +7,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"runtime/debug"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/ClusterCockpit/cc-backend/pkg/metricstore"
 	ccconf "github.com/ClusterCockpit/cc-lib/v2/ccConfig"
@@ -36,8 +38,8 @@ var (
 )
 
 var (
-	flagGops, flagVersion, flagDev, flagLogDateTime bool
-	flagConfigFile, flagLogLevel                    string
+	flagGops, flagVersion, flagDev, flagLogDateTime, flagCleanupCheckpoints bool
+	flagConfigFile, flagLogLevel                                            string
 )
 
 func printVersion() {
@@ -60,12 +62,13 @@ func runServer(ctx context.Context) error {
 		return fmt.Errorf("missing metricstore configuration")
 	}
 
-	metricstore.Init(mscfg, config.GetMetrics(), &wg)
-
-	// Set GC percent if not configured
+	// Set GC percent before loading checkpoints so the GC baseline is established
+	// with a low target from the start of the largest allocation event.
 	if os.Getenv(envGOGC) == "" {
 		debug.SetGCPercent(15)
 	}
+
+	metricstore.Init(mscfg, config.GetMetrics(), &wg)
 
 	if config.Keys.BackendURL != "" {
 		ms := metricstore.GetMemoryStore()
@@ -127,6 +130,7 @@ func run() error {
 	flag.BoolVar(&flagDev, "dev", false, "Enable development component: Swagger UI")
 	flag.BoolVar(&flagVersion, "version", false, "Show version information and exit")
 	flag.BoolVar(&flagLogDateTime, "logdate", false, "Set this flag to add date and time to log messages")
+	flag.BoolVar(&flagCleanupCheckpoints, "cleanup-checkpoints", false, "Clean up old checkpoint files (delete or archive) based on retention settings, then exit")
 	flag.StringVar(&flagConfigFile, "config", "./config.json", "Specify alternative path to `config.json`")
 	flag.StringVar(&flagLogLevel, "loglevel", "warn", "Sets the logging level: `[debug, info, warn (default), err, crit]`")
 	flag.Parse()
@@ -138,12 +142,6 @@ func run() error {
 
 	cclog.Init(flagLogLevel, flagLogDateTime)
 
-	if flagGops || config.Keys.Debug.EnableGops {
-		if err := agent.Listen(agent.Options{}); err != nil {
-			return fmt.Errorf("starting gops agent: %w", err)
-		}
-	}
-
 	ccconf.Init(flagConfigFile)
 
 	cfg := ccconf.GetPackageConfig("main")
@@ -152,6 +150,44 @@ func run() error {
 	}
 
 	config.Init(cfg)
+
+	if flagGops || config.Keys.Debug.EnableGops {
+		if err := agent.Listen(agent.Options{}); err != nil {
+			return fmt.Errorf("starting gops agent: %w", err)
+		}
+	}
+
+	if flagCleanupCheckpoints {
+		mscfg := ccconf.GetPackageConfig("metric-store")
+		if mscfg == nil {
+			return fmt.Errorf("metric-store configuration required for checkpoint cleanup")
+		}
+		if err := json.Unmarshal(mscfg, &metricstore.Keys); err != nil {
+			return fmt.Errorf("decoding metric-store config: %w", err)
+		}
+		d, err := time.ParseDuration(metricstore.Keys.RetentionInMemory)
+		if err != nil {
+			return fmt.Errorf("parsing retention-in-memory: %w", err)
+		}
+		from := time.Now().Add(-d)
+		deleteMode := metricstore.Keys.Cleanup == nil || metricstore.Keys.Cleanup.Mode != "archive"
+		cleanupDir := ""
+		if !deleteMode {
+			cleanupDir = metricstore.Keys.Cleanup.RootDir
+		}
+		cclog.Infof("Cleaning up checkpoints older than %s...", from.Format(time.RFC3339))
+		n, err := metricstore.CleanupCheckpoints(
+			metricstore.Keys.Checkpoints.RootDir, cleanupDir, from.Unix(), deleteMode)
+		if err != nil {
+			return fmt.Errorf("checkpoint cleanup: %w", err)
+		}
+		if deleteMode {
+			cclog.Printf("Cleanup done: %d checkpoint files deleted.", n)
+		} else {
+			cclog.Printf("Cleanup done: %d checkpoint files archived to parquet.", n)
+		}
+		return nil
+	}
 
 	natsConfig := ccconf.GetPackageConfig("nats")
 	if err := nats.Init(natsConfig); err != nil {
