@@ -64,6 +64,16 @@ All endpoints support both trailing-slash and non-trailing-slash variants:
 If `jwt-public-key` is set in `config.json`, all endpoints require JWT
 authentication using an Ed25519 key (`Authorization: Bearer <token>`).
 
+> **Security note:** Authentication only verifies the token's Ed25519
+> signature and its expiry — the claims (roles, user) are **not** checked.
+> Any validly-signed, unexpired token therefore has full access to every
+> endpoint, including the destructive `POST /api/free/` (drops buffered data)
+> and the state-dumping `GET /api/debug/`. If the same key is shared with a
+> cc-backend that issues lower-privilege user tokens, those tokens also unlock
+> cc-metric-store. If `jwt-public-key` is left empty, **no authentication is
+> performed on any endpoint** — only run in this mode on a trusted, isolated
+> network.
+
 ## Run tests
 
 Some benchmarks concurrently access the `MemoryStore`, so enabling the
@@ -135,7 +145,7 @@ The config file is a JSON document with four top-level sections.
 
 - `addr`: Address and port to listen on (default: `0.0.0.0:8082`)
 - `https-cert-file` / `https-key-file`: Paths to TLS certificate/key for HTTPS
-- `jwt-public-key`: Base64-encoded Ed25519 public key for JWT authentication. If empty, no auth is required.
+- `jwt-public-key`: Base64-encoded Ed25519 public key for JWT authentication. Only the signature and expiry are verified; token claims/roles are not enforced, so any valid token has full access (including `/api/free/` and `/api/debug/`). If empty, no auth is required on any endpoint — use only on a trusted network.
 - `user` / `group`: Drop privileges to this user/group after startup
 - `backend-url`: Optional URL of a cc-backend instance used as node provider
 
