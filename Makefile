@@ -5,7 +5,7 @@ GIT_HASH := $(shell git rev-parse --short HEAD || echo 'development')
 CURRENT_TIME = $(shell date +"%Y-%m-%d:T%H:%M:%S")
 LD_FLAGS = '-s -X main.date=${CURRENT_TIME} -X main.version=${VERSION} -X main.commit=${GIT_HASH}'
 
-.PHONY: clean distclean test swagger $(TARGET)
+.PHONY: clean distclean test swagger fmt $(TARGET)
 
 .NOTPARALLEL:
 
@@ -39,3 +39,7 @@ test:
 	@go build ./...
 	@go vet ./...
 	@go test ./...
+
+fmt:
+	$(info ===>  FORMAT)
+	@gofumpt -l -w .

@@ -177,7 +177,8 @@ func run() error {
 		}
 		cclog.Infof("Cleaning up checkpoints older than %s...", from.Format(time.RFC3339))
 		n, err := metricstore.CleanupCheckpoints(
-			metricstore.Keys.Checkpoints.RootDir, cleanupDir, from.Unix(), deleteMode)
+			metricstore.Keys.Checkpoints.RootDir, cleanupDir, from.Unix(), deleteMode,
+		)
 		if err != nil {
 			return fmt.Errorf("checkpoint cleanup: %w", err)
 		}

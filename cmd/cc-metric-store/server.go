@@ -49,7 +49,8 @@ func (s *Server) init() error {
 	if flagDev {
 		cclog.Print("Enable Swagger UI!")
 		s.router.HandleFunc("GET /swagger/", httpSwagger.Handler(
-			httpSwagger.URL("http://"+config.Keys.Address+"/swagger/doc.json")))
+			httpSwagger.URL("http://"+config.Keys.Address+"/swagger/doc.json"),
+		))
 	}
 
 	return nil
@@ -81,7 +82,8 @@ func (s *Server) Start(ctx context.Context) error {
 
 	if config.Keys.CertFile != "" && config.Keys.KeyFile != "" {
 		cert, err := tls.LoadX509KeyPair(
-			config.Keys.CertFile, config.Keys.KeyFile)
+			config.Keys.CertFile, config.Keys.KeyFile,
+		)
 		if err != nil {
 			return fmt.Errorf("loading X509 keypair (check 'https-cert-file' and 'https-key-file' in config.json): %w", err)
 		}
