@@ -1,3 +1,21 @@
+# `cc-metric-store` version 1.5.4
+
+This is a maintenance release of `cc-metric-store`, the metric timeseries
+cache implementation of ClusterCockpit. Since the storage engine is now part
+of `cc-backend` we will follow the version number of `cc-backend`.
+For release specific notes visit the [ClusterCockpit Documentation](https://clusterockpit.org/docs/release/).
+
+## Notable changes
+
+- **`make fmt` target**: New Makefile target runs `gofumpt -l -w .` to
+  reformat the source tree.
+- **Dependency upgrades**: `cc-backend` updated from v1.5.3 to v1.5.4;
+  `cc-lib` updated from v2.11.0 to v2.12.0; `nats.go` bumped from v1.50.0 to
+  v1.52.0; `parquet-go` bumped from v0.29.0 to v0.30.1; various other module
+  upgrades.
+- **Housekeeping**: `dist` directory added to `.gitignore`; multi-line calls
+  in `main.go` and `server.go` reformatted to gofumpt style.
+
 # `cc-metric-store` version 1.5.3
 
 This is a bugfix release of `cc-metric-store`, the metric timeseries cache
